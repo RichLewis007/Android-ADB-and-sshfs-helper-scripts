@@ -76,6 +76,8 @@ MINECRAFT_WORLDS_ALT_PATH="/sdcard/Android/data/com.mojang.minecraftpe/files/gam
 # Global variables
 declare -a WORLD_LIST
 declare -a WORLD_NAMES
+WORLD_LIST_CACHE_FILE="${TMPDIR:-/tmp}/minecraft-worlds-cache.txt"
+WORLD_LIST_CACHE_FILE="${TMPDIR:-/tmp}/minecraft-worlds-cache.txt"
 
 # ============================================================
 # Helper Functions
@@ -175,6 +177,44 @@ get_world_list() {
   fi
 
   log_info "Found ${#WORLD_LIST[@]} world(s)"
+  
+  # Cache the world list to temp file
+  {
+    echo "${#WORLD_LIST[@]}"
+    for i in "${!WORLD_LIST[@]}"; do
+      echo "${WORLD_LIST[$i]}"
+      echo "${WORLD_NAMES[$i]}"
+    done
+  } > "$WORLD_LIST_CACHE_FILE"
+  
+  return 0
+}
+
+# Load world list from cache file
+load_world_list_from_cache() {
+  WORLD_LIST=()
+  WORLD_NAMES=()
+  
+  if [[ ! -f "$WORLD_LIST_CACHE_FILE" ]]; then
+    return 1
+  fi
+  
+  {
+    read -r count
+    local i=0
+    while [[ $i -lt $count ]]; do
+      read -r wid || break
+      read -r wname || break
+      WORLD_LIST+=("$wid")
+      WORLD_NAMES+=("$wname")
+      ((i++))
+    done
+  } < "$WORLD_LIST_CACHE_FILE"
+  
+  if [[ ${#WORLD_LIST[@]} -eq 0 ]]; then
+    return 1
+  fi
+  
   return 0
 }
 
@@ -191,10 +231,10 @@ backup_world_as_is() {
   local world_name="$2"
   
   local ts=$(timestamp_now)
-  local backup_dir="${BACKUP_BASE_DIR}/world-folders/${ts}"
-  
   # Sanitize world name: replace spaces and special characters with dashes
   local safe_name=$(echo "$world_name" | sed 's/[^A-Za-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+  local backup_dir="${BACKUP_BASE_DIR}/world-folders/${safe_name}_${ts}"
+  
   local folder_name="${safe_name}_${world_id}"
   local dest_dir="${backup_dir}/${folder_name}"
   
@@ -206,6 +246,19 @@ backup_world_as_is() {
   # Pull the world directory
   local world_path="${MINECRAFT_WORLDS_PATH}/${world_id}"
   if run_with_spinner "Pulling world files..." "$ADB_BIN" pull "$world_path" "$dest_dir" >/dev/null 2>&1; then
+    # Copy world_icon.jpeg to the backup folder if it exists
+    # adb pull creates a subdirectory with the source directory name, so check dest_dir/world_id/world_icon.jpeg
+    local icon_source="${dest_dir}/${world_id}/world_icon.jpeg"
+    if [[ ! -f "$icon_source" ]]; then
+      # Also try direct location in case adb pull behavior differs
+      icon_source="${dest_dir}/world_icon.jpeg"
+    fi
+    
+    if [[ -f "$icon_source" ]]; then
+      cp "$icon_source" "${backup_dir}/world_icon.jpeg" 2>/dev/null || true
+      log_info "Copied world icon to backup folder"
+    fi
+    
     log_ok "World backed up successfully!"
     log_info "Location: $dest_dir"
     
@@ -225,11 +278,11 @@ backup_world_as_mcworld() {
   local world_name="$2"
   
   local ts=$(timestamp_now)
-  local backup_dir="${BACKUP_BASE_DIR}/mcworld-files/${ts}"
-  mkdir -p "$backup_dir"
-  
   # Sanitize world name for filename: replace all non-alphanumeric with dashes
   local safe_name=$(echo "$world_name" | sed 's/[^A-Za-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+  local backup_dir="${BACKUP_BASE_DIR}/mcworld-files/${safe_name}_${ts}"
+  mkdir -p "$backup_dir"
+  
   local out_file="${backup_dir}/${safe_name}.mcworld"
   local temp_dir="${backup_dir}/.temp_${world_id}"
   
@@ -243,6 +296,12 @@ backup_world_as_mcworld() {
     log_error "Failed to pull world files"
     rm -rf "$temp_dir"
     return 1
+  fi
+  
+  # Copy world_icon.jpeg to the backup folder if it exists
+  local icon_source="${temp_dir}/${world_id}/world_icon.jpeg"
+  if [[ -f "$icon_source" ]]; then
+    cp "$icon_source" "${backup_dir}/world_icon.jpeg" 2>/dev/null || true
   fi
   
   # Create zip file
@@ -278,68 +337,75 @@ handler_list_worlds() {
     return 1
   fi
   
-  if ! get_world_list; then
+  # Try to load from cache first, otherwise fetch from device
+  if ! load_world_list_from_cache; then
+    if ! get_world_list; then
+      echo
+      printf "Press Enter to continue..."
+      read -r
+      return 1
+    fi
+  fi
+  
+  # Loop to show world list menu until user selects "Return to main menu"
+  while true; do
+    # Create display names with IDs, with "Return to main menu" at the top
+    local display_items=("Return to main menu")
+    local i
+    for i in "${!WORLD_LIST[@]}"; do
+      display_items+=("${WORLD_NAMES[$i]} (${WORLD_LIST[$i]})")
+    done
+    
+    local choice
+    choice=$(pick_option "Select a world to backup:" "${display_items[@]}") || return 0
+    
+    # Check if user selected "Return to main menu"
+    if [[ "$choice" == "Return to main menu" ]]; then
+      return 0
+    fi
+    
+    # Extract world ID from choice (account for "Return to main menu" at index 0)
+    local selected_world_id=""
+    local selected_world_name=""
+    for i in "${!WORLD_LIST[@]}"; do
+      # display_items[0] is "Return to main menu", so worlds start at index 1
+      local display_index=$((i + 1))
+      if [[ "${display_items[$display_index]}" == "$choice" ]]; then
+        selected_world_id="${WORLD_LIST[$i]}"
+        selected_world_name="${WORLD_NAMES[$i]}"
+        break
+      fi
+    done
+    
+    if [[ -z "$selected_world_id" ]]; then
+      log_error "Could not find selected world"
+      continue
+    fi
+    
+    # Prompt for backup type
+    local backup_type
+    backup_type=$(pick_option "Backup type for: $selected_world_name" \
+      "Backup as world folder (full directory)" \
+      "Export as .mcworld file") || continue
+    
+    case "$backup_type" in
+      "Backup as world folder (full directory)")
+        backup_world_as_is "$selected_world_id" "$selected_world_name"
+        ;;
+      "Export as .mcworld file")
+        backup_world_as_mcworld "$selected_world_id" "$selected_world_name"
+        ;;
+      *)
+        log_error "Unknown backup type"
+        continue
+        ;;
+    esac
+    
     echo
     printf "Press Enter to continue..."
     read -r
-    return 1
-  fi
-  
-  # Create display names with IDs, with "Return to main menu" at the top
-  local display_items=("Return to main menu")
-  local i
-  for i in "${!WORLD_LIST[@]}"; do
-    display_items+=("${WORLD_NAMES[$i]} (${WORLD_LIST[$i]})")
+    # After Enter, loop continues to show world list again (from cache)
   done
-  
-  local choice
-  choice=$(pick_option "Select a world to backup:" "${display_items[@]}") || return 0
-  
-  # Check if user selected "Return to main menu"
-  if [[ "$choice" == "Return to main menu" ]]; then
-    return 0
-  fi
-  
-  # Extract world ID from choice (account for "Return to main menu" at index 0)
-  local selected_world_id=""
-  local selected_world_name=""
-  for i in "${!WORLD_LIST[@]}"; do
-    # display_items[0] is "Return to main menu", so worlds start at index 1
-    local display_index=$((i + 1))
-    if [[ "${display_items[$display_index]}" == "$choice" ]]; then
-      selected_world_id="${WORLD_LIST[$i]}"
-      selected_world_name="${WORLD_NAMES[$i]}"
-      break
-    fi
-  done
-  
-  if [[ -z "$selected_world_id" ]]; then
-    log_error "Could not find selected world"
-    return 1
-  fi
-  
-  # Prompt for backup type
-  local backup_type
-  backup_type=$(pick_option "Backup type for: $selected_world_name" \
-    "Backup as world folder (full directory)" \
-    "Export as .mcworld file") || return 0
-  
-  case "$backup_type" in
-    "Backup as world folder (full directory)")
-      backup_world_as_is "$selected_world_id" "$selected_world_name"
-      ;;
-    "Export as .mcworld file")
-      backup_world_as_mcworld "$selected_world_id" "$selected_world_name"
-      ;;
-    *)
-      log_error "Unknown backup type"
-      return 1
-      ;;
-  esac
-  
-  echo
-  printf "Press Enter to continue..."
-  read -r
 }
 
 handler_backup_all() {
