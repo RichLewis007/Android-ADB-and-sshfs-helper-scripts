@@ -30,7 +30,7 @@ ANDROID_SRC_1="/sdcard/Android/data/com.mojang.minecraftpe/files/games/com.mojan
 ANDROID_SRC_2="/storage/emulated/0/Android/data/com.mojang.minecraftpe/files/games/com.mojang"
 
 ADB_BIN="adb"
-OUT_DIR="./mc_backups"
+OUT_DIR="/Users/rich/Downloads/Minecraft-Worlds-Backups"
 EXPORT_MCWORLD="false"
 
 usage() {
@@ -80,6 +80,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Validate ADB binary if custom path provided
+if [[ "$ADB_BIN" != "adb" ]] && [[ ! -f "$ADB_BIN" ]]; then
+  echo "ERROR: adb binary not found: $ADB_BIN" >&2
+  exit 1
+fi
+if [[ -f "$ADB_BIN" ]] && [[ ! -x "$ADB_BIN" ]]; then
+  echo "ERROR: adb binary not executable: $ADB_BIN" >&2
+  exit 1
+fi
+
 timestamp_now() {
   # Your preferred style: %Y-%m-%d__%I-%M-%S-%p
   date +"%Y-%m-%d__%I-%M-%S-%p"
@@ -124,11 +134,17 @@ try_pull() {
   local src="$1"
   echo "Attempting adb pull from:"
   echo "  $src"
-  if "$ADB_BIN" pull "$src" "$dest_data" >/dev/null 2>&1; then
+  # Capture stderr to show errors on failure
+  local error_output
+  error_output=$("$ADB_BIN" pull "$src" "$dest_data" 2>&1)
+  local exit_code=$?
+  if [[ $exit_code -eq 0 ]]; then
     echo "SUCCESS: Pulled from $src"
     return 0
   fi
   echo "FAILED: Could not pull from $src"
+  echo "Error output:" >&2
+  echo "$error_output" >&2
   return 1
 }
 
@@ -230,12 +246,12 @@ if [[ "$EXPORT_MCWORLD" == "true" ]]; then
       out_file="${export_dir}/${safe_name}.mcworld"
 
       # mcworld is a zip of the CONTENTS of the world folder (not the folder itself)
-      (
-        cd "$w"
-        zip -r -q "$out_file" ./*
-      )
-
-      echo "Exported: $out_file"
+      if (cd "$w" && zip -r -q "$out_file" .); then
+        echo "Exported: $out_file"
+      else
+        echo "  WARNING: Failed to create .mcworld for $wid" >&2
+        continue
+      fi
     done
   fi
 fi
