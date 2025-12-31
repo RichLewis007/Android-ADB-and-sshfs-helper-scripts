@@ -19,10 +19,10 @@ source "$UI_LIB"
 
 # Configuration
 ADB_BIN="adb"
-MINECRAFT_WORLDS_PATH="/sdcard/Android/data/com.mojang.minecraftpe/files/games/com.mojang/minecraftWorlds"
+MINECRAFT_WORLDS_PATH="/storage/emulated/0/Android/data/com.mojang.minecraftpe/files/games/com.mojang/minecraftWorlds"
 BACKUP_BASE_DIR="${HOME}/Downloads/Minecraft-Worlds-Backups"
-ANDROID_SRC_1="/sdcard/Android/data/com.mojang.minecraftpe/files/games/com.mojang"
-ANDROID_SRC_2="/storage/emulated/0/Android/data/com.mojang.minecraftpe/files/games/com.mojang"
+MINECRAFT_WORLDS_ALT_PATH="/sdcard/Android/data/com.mojang.minecraftpe/files/games/com.mojang/minecraftWorlds"
+
 
 # Global variables
 declare -a WORLD_LIST
@@ -51,50 +51,77 @@ get_world_list() {
   WORLD_NAMES=()
 
   log_info "Fetching world list from Android device..."
+  log_info "Trying path: ${MINECRAFT_WORLDS_PATH}"
   
-  # Try both paths - use ls with proper error handling
+  # Use a simple loop approach - list all items in directory and check if they're directories
+  # Try primary path first
   local worlds_raw=""
-  # Use ls -1 to get one per line, and handle errors
-  worlds_raw=$("$ADB_BIN" shell "ls -1d ${MINECRAFT_WORLDS_PATH}/* 2>/dev/null | head -200" 2>/dev/null | tr -d '\r' || true)
+  # Use spinner but capture command output to temp file to avoid mixing with spinner output
+  local temp_output=$(mktemp)
+  if run_with_spinner "Listing worlds..." bash -c "\"$ADB_BIN\" shell \"for item in '${MINECRAFT_WORLDS_PATH}'/*; do [ -d \\\"\\\$item\\\" ] && basename \\\"\\\$item\\\"; done 2>/dev/null\" 2>/dev/null | tr -d '\r' > \"$temp_output\""; then
+    worlds_raw=$(cat "$temp_output" 2>/dev/null || true)
+  fi
+  rm -f "$temp_output"
   
   if [[ -z "$worlds_raw" ]]; then
-    # Try alternative path
-    local alt_path="/storage/emulated/0/Android/data/com.mojang.minecraftpe/files/games/com.mojang/minecraftWorlds"
-    worlds_raw=$("$ADB_BIN" shell "ls -1d ${alt_path}/* 2>/dev/null | head -200" 2>/dev/null | tr -d '\r' || true)
+    # Try alternative path (MINECRAFT_WORLDS_ALT_PATH)
+    log_info "Primary path not found, trying alternative: ${MINECRAFT_WORLDS_ALT_PATH}"
+    temp_output=$(mktemp)
+    if run_with_spinner "Listing worlds (alternative path)..." bash -c "\"$ADB_BIN\" shell \"for item in '${MINECRAFT_WORLDS_ALT_PATH}'/*; do [ -d \\\"\\\$item\\\" ] && basename \\\"\\\$item\\\"; done 2>/dev/null\" 2>/dev/null | tr -d '\r' > \"$temp_output\""; then
+      worlds_raw=$(cat "$temp_output" 2>/dev/null || true)
+      if [[ -n "$worlds_raw" ]]; then
+        MINECRAFT_WORLDS_PATH="$MINECRAFT_WORLDS_ALT_PATH"
+      fi
+    fi
+    rm -f "$temp_output"
   fi
   
-  if [[ -n "$worlds_raw" ]]; then
-    # Read each line
-    while IFS= read -r world_path || [[ -n "$world_path" ]]; do
-      # Skip empty lines
-      [[ -z "$world_path" ]] && continue
-      # Remove any trailing whitespace
-      world_path=$(echo "$world_path" | sed 's/[[:space:]]*$//')
-      [[ -z "$world_path" ]] && continue
-      
-      # Extract world ID (last part of path)
-      local wid=$(basename "$world_path" 2>/dev/null || echo "$world_path")
-      # Remove any special characters that might break things
-      wid=$(echo "$wid" | tr -d '\r\n' | sed 's/[^[:alnum:]._-]//g')
-      [[ -z "$wid" ]] && continue
-      
-      # Try to get world name from levelname.txt
-      local world_name="$wid"
-      local name_file="${MINECRAFT_WORLDS_PATH}/${wid}/levelname.txt"
-      local name=""
-      if name=$("$ADB_BIN" shell "cat '$name_file' 2>/dev/null | head -1" 2>/dev/null | tr -d '\r\n'); then
-        # Clean up the name
-        name=$(echo "$name" | sed 's/[[:space:]]*$//' | sed 's/^[[:space:]]*//')
-        [[ -n "$name" ]] && world_name="$name"
-      fi
-      
-      WORLD_LIST+=("$wid")
-      WORLD_NAMES+=("$world_name")
-    done <<< "$worlds_raw"
+  if [[ -z "$worlds_raw" ]]; then
+    log_error "No worlds found in: ${MINECRAFT_WORLDS_PATH}"
+    log_error "Or alternative: ${MINECRAFT_WORLDS_ALT_PATH}"
+    log_warn "Make sure Minecraft is installed and has worlds."
+    return 1
   fi
+  
+  # Parse the output line by line - convert to array and process
+  # Split by newlines and process each
+  local count=0
+  mapfile -t world_lines < <(printf '%s\n' "$worlds_raw")
+  
+  log_info "Reading world names (${#world_lines[@]} worlds)..."
+  for wid in "${world_lines[@]}"; do
+    # Skip empty lines
+    [[ -z "$wid" ]] && continue
+    # Remove any trailing/leading whitespace
+    wid=$(echo "$wid" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    [[ -z "$wid" ]] && continue
+    
+    # Skip if it looks like an error message
+    [[ "$wid" == *"No such file"* ]] && continue
+    [[ "$wid" == *"Permission denied"* ]] && continue
+    
+    # Try to get world name from levelname.txt (this is fast, no spinner needed)
+    local world_name="$wid"
+    local name_file="${MINECRAFT_WORLDS_PATH}/${wid}/levelname.txt"
+    local name=""
+    
+    # Try to read levelname.txt
+    name=$("$ADB_BIN" shell "cat '${name_file}' 2>/dev/null | head -1" 2>/dev/null | tr -d '\r\n' || true)
+    if [[ -n "$name" ]]; then
+      # Clean up the name
+      name=$(echo "$name" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+      [[ -n "$name" ]] && world_name="$name"
+    fi
+    
+    WORLD_LIST+=("$wid")
+    WORLD_NAMES+=("$world_name")
+    ((count++))
+  done
+  
+  log_info "Parsed $count world(s) from output"
 
   if [[ ${#WORLD_LIST[@]} -eq 0 ]]; then
-    log_warn "No worlds found. Make sure Minecraft is installed and has worlds."
+    log_warn "No worlds found after parsing. Make sure Minecraft is installed and has worlds."
     return 1
   fi
 
@@ -116,7 +143,11 @@ backup_world_as_is() {
   
   local ts=$(timestamp_now)
   local backup_dir="${BACKUP_BASE_DIR}/world-folders/${ts}"
-  local dest_dir="${backup_dir}/${world_id}"
+  
+  # Sanitize world name: replace spaces and special characters with dashes
+  local safe_name=$(echo "$world_name" | sed 's/[^A-Za-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+  local folder_name="${safe_name}_${world_id}"
+  local dest_dir="${backup_dir}/${folder_name}"
   
   mkdir -p "$dest_dir"
   
@@ -130,7 +161,7 @@ backup_world_as_is() {
     log_info "Location: $dest_dir"
     
     if [[ "$(uname)" == "Darwin" ]]; then
-      if confirm "Open backup location in Finder? [y/N] "; then
+      if confirm "Open backup location in Finder?"; then
         open "$backup_dir"
       fi
     fi
@@ -173,7 +204,7 @@ backup_world_as_mcworld() {
       log_info "File: $out_file"
       
       if [[ "$(uname)" == "Darwin" ]]; then
-        if confirm "Open backup location in Finder? [y/N] "; then
+        if confirm "Open backup location in Finder?"; then
           open "$backup_dir"
         fi
       fi
