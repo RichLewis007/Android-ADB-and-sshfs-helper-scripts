@@ -190,13 +190,28 @@ get_world_list() {
   return 0
 }
 
-# Load world list from cache file
+# Load world list from cache file (only if cache is less than 1 hour old)
 load_world_list_from_cache() {
   WORLD_LIST=()
   WORLD_NAMES=()
   
   if [[ ! -f "$WORLD_LIST_CACHE_FILE" ]]; then
     return 1
+  fi
+  
+  # Check if cache file is older than 1 hour (3600 seconds)
+  local cache_age=0
+  local current_time=$(date +%s)
+  local cache_mtime=$(stat -f %m "$WORLD_LIST_CACHE_FILE" 2>/dev/null || stat -c %Y "$WORLD_LIST_CACHE_FILE" 2>/dev/null || echo "0")
+  
+  if [[ "$cache_mtime" != "0" ]]; then
+    cache_age=$((current_time - cache_mtime))
+    
+    # If cache is older than 1 hour, delete it and return failure
+    if [[ $cache_age -gt 3600 ]]; then
+      rm -f "$WORLD_LIST_CACHE_FILE"
+      return 1
+    fi
   fi
   
   {
@@ -233,9 +248,9 @@ backup_world_as_is() {
   local ts=$(timestamp_now)
   # Sanitize world name: replace spaces and special characters with dashes
   local safe_name=$(echo "$world_name" | sed 's/[^A-Za-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
-  local backup_dir="${BACKUP_BASE_DIR}/world-folders/${safe_name}_${ts}"
+  local backup_dir="${BACKUP_BASE_DIR}/world-folders/${safe_name}__${ts}"
   
-  local folder_name="${safe_name}_${world_id}"
+  local folder_name="${safe_name}__${world_id}"
   local dest_dir="${backup_dir}/${folder_name}"
   
   mkdir -p "$dest_dir"
@@ -280,7 +295,7 @@ backup_world_as_mcworld() {
   local ts=$(timestamp_now)
   # Sanitize world name for filename: replace all non-alphanumeric with dashes
   local safe_name=$(echo "$world_name" | sed 's/[^A-Za-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
-  local backup_dir="${BACKUP_BASE_DIR}/mcworld-files/${safe_name}_${ts}"
+  local backup_dir="${BACKUP_BASE_DIR}/mcworld-files/${safe_name}__${ts}"
   mkdir -p "$backup_dir"
   
   local out_file="${backup_dir}/${safe_name}.mcworld"
