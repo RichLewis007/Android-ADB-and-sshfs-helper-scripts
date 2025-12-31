@@ -52,17 +52,39 @@ get_world_list() {
 
   log_info "Fetching world list from Android device..."
   
-  # Try both paths
+  # Try both paths - use ls with proper error handling
   local worlds_raw=""
-  if worlds_raw=$("$ADB_BIN" shell "ls -1d ${MINECRAFT_WORLDS_PATH}/* 2>/dev/null" 2>/dev/null | tr -d '\r'); then
-    while IFS= read -r world_path; do
+  # Use ls -1 to get one per line, and handle errors
+  worlds_raw=$("$ADB_BIN" shell "ls -1d ${MINECRAFT_WORLDS_PATH}/* 2>/dev/null | head -200" 2>/dev/null | tr -d '\r' || true)
+  
+  if [[ -z "$worlds_raw" ]]; then
+    # Try alternative path
+    local alt_path="/storage/emulated/0/Android/data/com.mojang.minecraftpe/files/games/com.mojang/minecraftWorlds"
+    worlds_raw=$("$ADB_BIN" shell "ls -1d ${alt_path}/* 2>/dev/null | head -200" 2>/dev/null | tr -d '\r' || true)
+  fi
+  
+  if [[ -n "$worlds_raw" ]]; then
+    # Read each line
+    while IFS= read -r world_path || [[ -n "$world_path" ]]; do
+      # Skip empty lines
       [[ -z "$world_path" ]] && continue
+      # Remove any trailing whitespace
+      world_path=$(echo "$world_path" | sed 's/[[:space:]]*$//')
+      [[ -z "$world_path" ]] && continue
+      
+      # Extract world ID (last part of path)
       local wid=$(basename "$world_path" 2>/dev/null || echo "$world_path")
+      # Remove any special characters that might break things
+      wid=$(echo "$wid" | tr -d '\r\n' | sed 's/[^[:alnum:]._-]//g')
+      [[ -z "$wid" ]] && continue
       
       # Try to get world name from levelname.txt
       local world_name="$wid"
       local name_file="${MINECRAFT_WORLDS_PATH}/${wid}/levelname.txt"
-      if name=$("$ADB_BIN" shell "cat '$name_file' 2>/dev/null" 2>/dev/null | tr -d '\r' | head -n 1); then
+      local name=""
+      if name=$("$ADB_BIN" shell "cat '$name_file' 2>/dev/null | head -1" 2>/dev/null | tr -d '\r\n'); then
+        # Clean up the name
+        name=$(echo "$name" | sed 's/[[:space:]]*$//' | sed 's/^[[:space:]]*//')
         [[ -n "$name" ]] && world_name="$name"
       fi
       
@@ -76,6 +98,7 @@ get_world_list() {
     return 1
   fi
 
+  log_info "Found ${#WORLD_LIST[@]} world(s)"
   return 0
 }
 
@@ -177,14 +200,13 @@ handler_list_worlds() {
   
   if ! get_world_list; then
     echo
-    if ! confirm "Press Enter to continue..."; then
-      return 1
-    fi
+    printf "Press Enter to continue..."
+    read -r
     return 1
   fi
   
-  # Create display names with IDs
-  local display_items=()
+  # Create display names with IDs, with "Return to main menu" at the top
+  local display_items=("Return to main menu")
   local i
   for i in "${!WORLD_LIST[@]}"; do
     display_items+=("${WORLD_NAMES[$i]} (${WORLD_LIST[$i]})")
@@ -193,11 +215,18 @@ handler_list_worlds() {
   local choice
   choice=$(pick_option "Select a world to backup:" "${display_items[@]}") || return 0
   
-  # Extract world ID from choice
+  # Check if user selected "Return to main menu"
+  if [[ "$choice" == "Return to main menu" ]]; then
+    return 0
+  fi
+  
+  # Extract world ID from choice (account for "Return to main menu" at index 0)
   local selected_world_id=""
   local selected_world_name=""
   for i in "${!WORLD_LIST[@]}"; do
-    if [[ "${display_items[$i]}" == "$choice" ]]; then
+    # display_items[0] is "Return to main menu", so worlds start at index 1
+    local display_index=$((i + 1))
+    if [[ "${display_items[$display_index]}" == "$choice" ]]; then
       selected_world_id="${WORLD_LIST[$i]}"
       selected_world_name="${WORLD_NAMES[$i]}"
       break
@@ -229,9 +258,8 @@ handler_list_worlds() {
   esac
   
   echo
-  if ! confirm "Press Enter to continue..."; then
-    return 1
-  fi
+  printf "Press Enter to continue..."
+  read -r
 }
 
 handler_backup_all() {
@@ -270,9 +298,8 @@ handler_backup_all() {
   
   log_ok "All worlds processed!"
   echo
-  if ! confirm "Press Enter to continue..."; then
-    return 1
-  fi
+  printf "Press Enter to continue..."
+  read -r
 }
 
 handler_open_backup_folder() {
@@ -284,127 +311,20 @@ handler_open_backup_folder() {
     log_info "Backup folder: $BACKUP_BASE_DIR"
   fi
   echo
-  if ! confirm "Press Enter to continue..."; then
-    return 1
-  fi
+  printf "Press Enter to continue..."
+  read -r
 }
 
 # ============================================================
-# Custom Menu with Right Column Comments
-# ============================================================
-
-menu_with_comments() {
-  local title="$1"; shift
-  local entries=("$@")
-  
-  if (( ${#entries[@]} == 0 )); then
-    log_error "menu_with_comments called with no entries"
-    return 1
-  fi
-  
-  # Parse entries (format: "Label::Comment::Handler")
-  local labels=()
-  local comments=()
-  local handlers=()
-  
-  local e label comment handler
-  for e in "${entries[@]}"; do
-    # Split on :: (using parameter expansion)
-    label="${e%%::*}"
-    local rest="${e#*::}"
-    comment="${rest%%::*}"
-    handler="${rest#*::}"
-    labels+=("$label")
-    comments+=("$comment")
-    handlers+=("$handler")
-  done
-  
-  while true; do
-    clear
-    local border="========================================================================"
-    printf "\n%s\n" "$border"
-    printf "%b%s%b\n" "${COLOR_BOLD}${COLOR_CYAN}" "$title" "${COLOR_RESET}"
-    printf "%s\n" "$border"
-    printf "\n"
-    
-    # Calculate column widths
-    local label_width=0
-    local i
-    for i in "${!labels[@]}"; do
-      local len=${#labels[$i]}
-      (( len > label_width )) && label_width=$len
-    done
-    # Add padding
-    (( label_width += 4 ))
-    # Ensure minimum width
-    (( label_width < 30 )) && label_width=30
-    
-    # Display menu items
-    for i in "${!labels[@]}"; do
-      printf "  %b%2d)%b %-${label_width}s %b%s%b\n" \
-        "$COLOR_CYAN" "$((i+1))" "$COLOR_RESET" \
-        "${labels[$i]}" \
-        "$COLOR_DIM" "${comments[$i]}" "$COLOR_RESET"
-    done
-    
-    local quit_num=$((${#labels[@]} + 1))
-    printf "  %b%2d)%b %-${label_width}s %b%s%b\n" \
-      "$COLOR_RED" "$quit_num" "$COLOR_RESET" \
-      "Quit" \
-      "$COLOR_DIM" "Exit the program" "$COLOR_RESET"
-    
-    printf "\n%s\n" "$border"
-    printf "\nChoose: "
-    
-    local choice
-    if ! read -r choice; then
-      log_warn "EOF on input, exiting."
-      return 1
-    fi
-    
-    case "$choice" in
-      q|Q) return 1 ;;
-      ''|*[!0-9]*)
-        log_warn "Please enter a number or 'q'."
-        sleep 1
-        continue
-        ;;
-    esac
-    
-    if (( choice >= 1 && choice <= ${#labels[@]} )); then
-      local selected=$((choice - 1))
-      handler="${handlers[$selected]}"
-      
-      case "$handler" in
-        QUIT) return 1 ;;
-        BACK) return 0 ;;
-        *)
-          if declare -f "$handler" >/dev/null 2>&1; then
-            "$handler" || log_warn "Handler '$handler' returned non-zero"
-          else
-            log_error "Handler function '$handler' not found"
-            sleep 2
-          fi
-          ;;
-      esac
-    elif (( choice == quit_num )); then
-      return 1
-    else
-      log_warn "Invalid choice."
-      sleep 1
-    fi
-  done
-}
-
-# ============================================================
-# Main Menu
+# Main Menu (using bash-ui.sh ui_run_page)
 # ============================================================
 
 main_menu() {
-  menu_with_comments "Minecraft Bedrock Backup Tool" \
-    "List Minecraft Worlds::Show all worlds and backup individually::handler_list_worlds" \
-    "Backup All Worlds::Backup all worlds at once::handler_backup_all" \
-    "Open Backup Folder::Open the backup folder in Finder::handler_open_backup_folder"
+  ui_run_page "Minecraft Bedrock Backup Tool" \
+    "List Minecraft Worlds - Show all worlds and backup individually::handler_list_worlds" \
+    "Backup All Worlds - Backup all worlds at once::handler_backup_all" \
+    "Open Backup Folder - Open the backup folder in Finder::handler_open_backup_folder" \
+    "Quit - Exit the program::QUIT"
 }
 
 # ============================================================
@@ -427,10 +347,8 @@ main() {
   # Ensure backup directory exists
   mkdir -p "$BACKUP_BASE_DIR"
   
-  # Run main menu
-  while true; do
-    main_menu || break
-  done
+  # Run main menu (ui_run_page handles the loop internally)
+  main_menu
   
   log_info "Goodbye!"
 }
