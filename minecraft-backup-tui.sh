@@ -77,7 +77,6 @@ MINECRAFT_WORLDS_ALT_PATH="/sdcard/Android/data/com.mojang.minecraftpe/files/gam
 declare -a WORLD_LIST
 declare -a WORLD_NAMES
 WORLD_LIST_CACHE_FILE="${TMPDIR:-/tmp}/minecraft-worlds-cache.txt"
-WORLD_LIST_CACHE_FILE="${TMPDIR:-/tmp}/minecraft-worlds-cache.txt"
 
 # ============================================================
 # Helper Functions
@@ -201,10 +200,21 @@ load_world_list_from_cache() {
   
   # Check if cache file is older than 1 hour (3600 seconds)
   local cache_age=0
-  local current_time=$(date +%s)
-  local cache_mtime=$(stat -f %m "$WORLD_LIST_CACHE_FILE" 2>/dev/null || stat -c %Y "$WORLD_LIST_CACHE_FILE" 2>/dev/null || echo "0")
+  local current_time
+  current_time=$(date +%s) || current_time=0
+  local cache_mtime="0"
   
-  if [[ "$cache_mtime" != "0" ]]; then
+  # Get modification time (try macOS stat first, then Linux stat)
+  if command -v stat >/dev/null 2>&1; then
+    cache_mtime=$(stat -f %m "$WORLD_LIST_CACHE_FILE" 2>/dev/null || stat -c %Y "$WORLD_LIST_CACHE_FILE" 2>/dev/null || echo "0")
+  fi
+  
+  # Ensure cache_mtime is a number
+  if [[ ! "$cache_mtime" =~ ^[0-9]+$ ]]; then
+    cache_mtime="0"
+  fi
+  
+  if [[ "$cache_mtime" != "0" ]] && [[ "$current_time" != "0" ]]; then
     cache_age=$((current_time - cache_mtime))
     
     # If cache is older than 1 hour, delete it and return failure
