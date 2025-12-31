@@ -3,6 +3,55 @@
 #
 # TUI (Text User Interface) for Minecraft Bedrock Android backup script
 # Uses bash-ui.sh for menu functionality
+#
+# Description:
+#   This script provides an interactive menu-driven interface for backing up
+#   Minecraft Bedrock worlds from an Android device via ADB (Android Debug Bridge).
+#   It allows users to selectively backup individual worlds or all worlds at once,
+#   in either "as-is" directory format or as .mcworld files (zipped format).
+#
+# Features:
+#   - Interactive menu system using bash-ui.sh (supports fzf/gum/basic menu)
+#   - Lists all Minecraft worlds from the Android device
+#   - Displays world names from levelname.txt files
+#   - Backup individual worlds with format choice:
+#     * World folders: Full directory structure with descriptive names
+#       (format: <world-name>_<world-id>)
+#     * .mcworld files: Zipped world archives ready for import
+#   - Backup all worlds at once with format choice
+#   - Automatic path detection (tries primary path, falls back to alternative)
+#   - Progress indicators with spinners for long operations
+#   - Organized backup directory structure with timestamps
+#
+# Requirements:
+#   - ADB (Android Debug Bridge) installed and in PATH
+#   - Android device connected via USB with USB debugging enabled
+#   - bash-ui.sh library at ~/utils/bash-ui.sh
+#   - zip command (for .mcworld export)
+#
+# Usage:
+#   ./minecraft-backup-tui.sh
+#
+# Configuration:
+#   - MINECRAFT_WORLDS_PATH: Primary path to Minecraft worlds on Android
+#   - MINECRAFT_WORLDS_ALT_PATH: Alternative path (used as fallback)
+#   - BACKUP_BASE_DIR: Base directory for backups (default: ~/Downloads/Minecraft-Worlds-Backups)
+#
+# Backup Directory Structure:
+#   ~/Downloads/Minecraft-Worlds-Backups/
+#   ├── world-folders/
+#   │   └── <timestamp>/
+#   │       └── <world-name>_<world-id>/
+#   │           └── (world files)
+#   └── mcworld-files/
+#       └── <timestamp>/
+#           └── <world-name>.mcworld
+#
+# Notes:
+#   - Close Minecraft app before backing up for best consistency
+#   - World names are sanitized for folder names (spaces/special chars -> dashes)
+#   - The script tries both /sdcard/... and /storage/emulated/0/... paths automatically
+#   - Menu navigation: Arrow keys (with fzf/gum) or type to search/filter
 
 set -euo pipefail
 
@@ -179,8 +228,8 @@ backup_world_as_mcworld() {
   local backup_dir="${BACKUP_BASE_DIR}/mcworld-files/${ts}"
   mkdir -p "$backup_dir"
   
-  # Sanitize world name for filename
-  local safe_name=$(echo "$world_name" | tr '/\n\r\t' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ *//; s/ *$//' | sed 's/[^A-Za-z0-9._ -]/_/g')
+  # Sanitize world name for filename: replace all non-alphanumeric with dashes
+  local safe_name=$(echo "$world_name" | sed 's/[^A-Za-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
   local out_file="${backup_dir}/${safe_name}.mcworld"
   local temp_dir="${backup_dir}/.temp_${world_id}"
   
