@@ -228,7 +228,7 @@ cmd_move() {
   
   # Count files
   local file_count
-  file_count=$(echo "$files_list" | grep -c . || echo "0")
+  file_count=$(echo "$files_list" | { grep -c . || echo "0"; })
   
   echo "Found $file_count files to move"
   echo "Source: $remote"
@@ -257,13 +257,19 @@ cmd_move() {
     local dest_file="$local_path/$rel_path"
     local dest_dir
     dest_dir=$(dirname "$dest_file")
+    
+    # Ensure destination directory exists
+    if [[ -z "$dest_dir" ]]; then
+      dest_dir="$local_path"
+    fi
     mkdir -p "$dest_dir" 2>/dev/null || true
     
+    # Copy the file
     if "$ADB_BIN" pull "$file_path" "$dest_dir" >/dev/null 2>&1; then
-      ((copied++))
+      copied=$((copied + 1))
     else
       echo "  ✗ Failed to copy: $rel_path"
-      ((failed++))
+      failed=$((failed + 1))
     fi
   done <<< "$files_list"
   
