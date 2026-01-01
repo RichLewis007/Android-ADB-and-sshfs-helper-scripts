@@ -21,7 +21,7 @@ set -euo pipefail
 # Bypasses Scoped Storage restrictions
 # Can access Android/data directories
 
-# Useful paths on my Pixel8:
+# Useful paths on Android devices:
 # /storage/emulated/0 (aliased to /sdcard/ need trailing slash)
 # /sdcard/DCIM (photos)
 # /sdcard/Download
@@ -52,7 +52,7 @@ Commands:
   
 Examples:
   ./android-adb-helper.sh list /sdcard/DCIM
-  ./android-adb-helper.sh pull /sdcard/DCIM ~/Desktop/DCIM
+  ./android-adb-helper.sh pull /sdcard/DCIM ~/Downloads/DCIM
   ./android-adb-helper.sh push ~/Downloads/file.txt /sdcard/Download/
   ./android-adb-helper.sh move /sdcard/Download ~/Downloads/moved
   ./android-adb-helper.sh explorer

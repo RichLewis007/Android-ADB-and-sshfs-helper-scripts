@@ -108,7 +108,7 @@ General-purpose file access tool for Android devices via ADB. Provides shortcuts
 ./android-adb-helper.sh list /sdcard/DCIM
 
 # Pull photos to Desktop
-./android-adb-helper.sh pull /sdcard/DCIM ~/Desktop/DCIM
+./android-adb-helper.sh pull /sdcard/DCIM ~/Downloads/DCIM
 
 # Push a file to Downloads
 ./android-adb-helper.sh push ~/Documents/file.txt /sdcard/Download/
@@ -302,7 +302,7 @@ Path                      | Exists | Accessible | Sample Files
 **Option 1: Using ADB (recommended for large transfers)**
 
 ```bash
-./android-adb-helper.sh pull /sdcard/DCIM ~/Desktop/AndroidPhotos
+./android-adb-helper.sh pull /sdcard/DCIM ~/Downloads/AndroidPhotos
 ```
 
 **Option 2: Using SSHFS (for browsing)**
@@ -319,7 +319,7 @@ Path                      | Exists | Accessible | Sample Files
 ```bash
 # ADB can access /Android/data/* (SSHFS cannot)
 ./android-adb-helper.sh list /storage/emulated/0/Android/data
-./android-adb-helper.sh pull /storage/emulated/0/Android/data/com.example.app ~/Desktop/app-data
+./android-adb-helper.sh pull /storage/emulated/0/Android/data/com.example.app ~/Downloads/app-data
 ```
 
 ### Cleaning Up After SSHFS Issues
