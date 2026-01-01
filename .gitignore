@@ -1,6 +1,19 @@
 # Local folder (project-specific notes and files)
 local/
 
+# ADB/Android related temporary files
+adb-*.tmp
+android-*.tmp
+
+# SSHFS mount points (if created by scripts)
+AndroidDevice/
+*.mount
+
+# Personal notes and scratch files
+notes.txt
+scratch.*
+todo.txt
+
 # macOS
 .DS_Store
 .AppleDouble
@@ -46,16 +59,3 @@ Temporary Items
 # Temporary script files
 *.sh.bak
 *.sh~
-
-# ADB/Android related temporary files
-adb-*.tmp
-android-*.tmp
-
-# SSHFS mount points (if created by scripts)
-AndroidDevice/
-*.mount
-
-# Personal notes and scratch files
-notes.txt
-scratch.*
-todo.txt
