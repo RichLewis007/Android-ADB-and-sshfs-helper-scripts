@@ -4,7 +4,6 @@
 # Author: Rich Lewis - GitHub @RichLewis007
 #
 # TUI (Text User Interface) for Minecraft Bedrock Android backup script
-# Uses bash-ui.sh for menu functionality
 #
 # Description:
 #   This script provides an interactive menu-driven interface for backing up
@@ -13,7 +12,7 @@
 #   in either "as-is" directory format or as .mcworld files (zipped format).
 #
 # Features:
-#   - Interactive menu system using bash-ui.sh (supports fzf/gum/basic menu)
+#   - Interactive menu system (supports fzf/gum/basic menu fallback)
 #   - Lists all Minecraft worlds from the Android device
 #   - Displays world names from levelname.txt files
 #   - Backup individual worlds with format choice:
@@ -28,8 +27,8 @@
 # Requirements:
 #   - ADB (Android Debug Bridge) installed and in PATH
 #   - Android device connected via USB with USB debugging enabled
-#   - bash-ui.sh library at ~/utils/bash-ui.sh
 #   - zip command (for .mcworld export)
+#   - Optional: fzf or gum for enhanced menu experience (falls back to basic select if not available)
 #
 # Usage:
 #   ./minecraft-backup-via-adb.sh
@@ -59,14 +58,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_SCRIPT="${SCRIPT_DIR}/minecraft-backup-via-adb.sh"
-UI_LIB="${HOME}/utils/bash-ui.sh"
-
-# Source the UI library
-if [[ ! -f "$UI_LIB" ]]; then
-  echo "ERROR: bash-ui.sh not found at $UI_LIB" >&2
-  exit 1
-fi
-source "$UI_LIB"
 
 # Configuration
 ADB_BIN="adb"
@@ -79,6 +70,185 @@ MINECRAFT_WORLDS_ALT_PATH="/sdcard/Android/data/com.mojang.minecraftpe/files/gam
 declare -a WORLD_LIST
 declare -a WORLD_NAMES
 WORLD_LIST_CACHE_FILE="${TMPDIR:-/tmp}/minecraft-worlds-cache.txt"
+
+# ============================================================
+# UI Functions (self-contained, no external dependencies)
+# ============================================================
+
+# Logging functions with colors
+log_info() {
+  echo "ℹ  $*" >&2
+}
+
+log_error() {
+  echo "✗ ERROR: $*" >&2
+}
+
+log_warn() {
+  echo "⚠  WARNING: $*" >&2
+}
+
+log_ok() {
+  echo "✓ $*" >&2
+}
+
+# Confirm function - prompts user for yes/no
+confirm() {
+  local prompt="$1"
+  local response
+  while true; do
+    printf "%s (y/n): " "$prompt" >&2
+    read -r response
+    case "$response" in
+      [yY]|[yY][eE][sS]) return 0 ;;
+      [nN]|[nN][oO]) return 1 ;;
+      *) echo "Please answer yes or no." >&2 ;;
+    esac
+  done
+}
+
+# Pick option - interactive menu selection with fzf/gum/basic fallback
+pick_option() {
+  local prompt="$1"
+  shift
+  local items=("$@")
+  
+  if [[ ${#items[@]} -eq 0 ]]; then
+    return 1
+  fi
+  
+  # Try fzf first (best experience)
+  if command -v fzf >/dev/null 2>&1; then
+    printf '%s\n' "${items[@]}" | fzf --prompt="$prompt " --header=""
+    return $?
+  fi
+  
+  # Try gum second (modern alternative)
+  if command -v gum >/dev/null 2>&1; then
+    printf '%s\n' "${items[@]}" | gum choose --prompt="$prompt"
+    return $?
+  fi
+  
+  # Fallback to basic select menu
+  echo "$prompt" >&2
+  echo "" >&2
+  select choice in "${items[@]}"; do
+    if [[ -n "$choice" ]]; then
+      echo "$choice"
+      return 0
+    fi
+  done
+}
+
+# Run command with spinner
+run_with_spinner() {
+  local message="$1"
+  shift
+  local cmd=("$@")
+  
+  # Simple spinner implementation
+  local spinner_chars="|/-\\"
+  local pid
+  local spinner_pid
+  
+  # Start the command in background
+  "${cmd[@]}" >/dev/null 2>&1 &
+  pid=$!
+  
+  # Show spinner while command runs
+  (
+    local i=0
+    while kill -0 "$pid" 2>/dev/null; do
+      printf "\r%s %s" "$message" "${spinner_chars:$i:1}" >&2
+      sleep 0.1
+      i=$(( (i + 1) % 4 ))
+    done
+    printf "\r%s done\n" "$message" >&2
+  ) &
+  spinner_pid=$!
+  
+  # Wait for command to complete
+  wait "$pid"
+  local exit_code=$?
+  
+  # Stop spinner
+  kill "$spinner_pid" 2>/dev/null || true
+  wait "$spinner_pid" 2>/dev/null || true
+  
+  return $exit_code
+}
+
+# UI run page - main menu loop
+ui_run_page() {
+  local title="$1"
+  shift
+  local menu_items=("$@")
+  
+  while true; do
+    clear
+    echo "========================================="
+    echo "$title"
+    echo "========================================="
+    echo ""
+    
+    # Parse menu items (format: "Display Text::handler_function")
+    local display_items=()
+    local handlers=()
+    
+    for item in "${menu_items[@]}"; do
+      if [[ "$item" == *"::"* ]]; then
+        local display_text="${item%%::*}"
+        local handler="${item##*::}"
+        display_items+=("$display_text")
+        handlers+=("$handler")
+      else
+        display_items+=("$item")
+        handlers+=("$item")
+      fi
+    done
+    
+    # Show menu and get selection
+    local choice
+    choice=$(pick_option "Select an option:" "${display_items[@]}")
+    local exit_code=$?
+    
+    # Handle selection
+    if [[ $exit_code -ne 0 ]] || [[ -z "$choice" ]]; then
+      # User cancelled or no selection
+      return 0
+    fi
+    
+    # Find the index of the selected item
+    local selected_index=-1
+    for i in "${!display_items[@]}"; do
+      if [[ "${display_items[$i]}" == "$choice" ]]; then
+        selected_index=$i
+        break
+      fi
+    done
+    
+    if [[ $selected_index -eq -1 ]]; then
+      continue
+    fi
+    
+    local handler="${handlers[$selected_index]}"
+    
+    # Check if it's QUIT
+    if [[ "$handler" == "QUIT" ]] || [[ "$handler" == "Quit" ]] || [[ "$handler" == "quit" ]]; then
+      return 0
+    fi
+    
+    # Call the handler function
+    if declare -f "$handler" >/dev/null 2>&1; then
+      "$handler"
+    else
+      log_error "Handler function '$handler' not found"
+      echo ""
+      echo "Press Enter to continue..."
+      read -r
+    fi
+  done
+}
 
 # ============================================================
 # Helper Functions
@@ -489,7 +659,7 @@ handler_open_backup_folder() {
 }
 
 # ============================================================
-# Main Menu (using bash-ui.sh ui_run_page)
+# Main Menu
 # ============================================================
 
 main_menu() {
