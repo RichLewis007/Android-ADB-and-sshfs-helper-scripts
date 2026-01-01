@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# find-android-paths-via-adb.sh
+# android-adb-find-paths.sh
 #
 # Author: Rich Lewis - GitHub @RichLewis007
 # 
 # Helper script to find Android storage paths via ADB.
 # This helps you discover which path to use for SSHFS mounting.
 #
-# Usage: ./find-android-paths-via-adb.sh
+# Usage: ./android-adb-find-paths.sh
 
 ADB_BIN="adb"
 
