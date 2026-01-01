@@ -1,0 +1,61 @@
+# Local folder (project-specific notes and files)
+local/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*.tmp
+
+# Log files
+*.log
+*.out
+
+# Temporary script files
+*.sh.bak
+*.sh~
+
+# ADB/Android related temporary files
+adb-*.tmp
+android-*.tmp
+
+# SSHFS mount points (if created by scripts)
+AndroidDevice/
+*.mount
+
+# Personal notes and scratch files
+notes.txt
+scratch.*
+todo.txt
