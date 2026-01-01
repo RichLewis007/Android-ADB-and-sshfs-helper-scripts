@@ -256,7 +256,7 @@ ui_run_page() {
 
 check_device() {
   if ! command -v "$ADB_BIN" >/dev/null 2>&1; then
-    log_error "adb not found. Install with: brew install android-platform-tools"
+    log_error "adb not found. Install with: brew install android-platform-tools (or: sudo port install android-platform-tools)"
     return 1
   fi
 
@@ -519,7 +519,7 @@ backup_world_as_mcworld() {
       return 1
     fi
   else
-    log_error "zip command not found. Install with: brew install zip"
+    log_error "zip command not found. Install with: brew install zip (or: sudo port install zip)"
     rm -rf "$temp_dir"
     return 1
   fi
@@ -677,7 +677,7 @@ main_menu() {
 main() {
   # Check dependencies
   if ! command -v "$ADB_BIN" >/dev/null 2>&1; then
-    log_error "adb not found. Install with: brew install android-platform-tools"
+    log_error "adb not found. Install with: brew install android-platform-tools (or: sudo port install android-platform-tools)"
     exit 1
   fi
   

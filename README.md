@@ -63,6 +63,8 @@ ADB (Android Debug Bridge) and SSHFS are two complementary methods for accessing
 
 ### macOS Dependencies
 
+**Using Homebrew:**
+
 ```bash
 # Install ADB (Android Debug Bridge)
 brew install android-platform-tools
@@ -73,6 +75,20 @@ brew install macfuse sshfs
 # Optional: Enhanced menu experience
 brew install fzf        # or
 brew install gum
+```
+
+**Using MacPorts:**
+
+```bash
+# Install ADB (Android Debug Bridge)
+sudo port install android-platform-tools
+
+# Install SSHFS (for mounting Android device)
+sudo port install macfuse sshfs
+
+# Optional: Enhanced menu experience
+sudo port install fzf        # or
+sudo port install gum
 ```
 
 ### Android Setup
