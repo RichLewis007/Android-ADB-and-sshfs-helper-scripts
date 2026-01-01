@@ -13,6 +13,52 @@ These scripts provide convenient command-line tools for:
 - **Minecraft backups**: Interactive TUI for backing up Minecraft Bedrock worlds from Android devices
 - **Mount management**: Clean up stale SSHFS mount points
 
+## Understanding ADB and SSHFS
+
+ADB (Android Debug Bridge) and SSHFS are two complementary methods for accessing files on your Android device, each with different strengths and use cases.
+
+### ADB (Android Debug Bridge)
+
+**Connection:** USB cable (or WiFi ADB)
+
+**Access Method:** Command-line tools (`adb pull`, `adb push`, `adb shell`)
+
+**Key Features:**
+
+- **Elevated permissions**: Runs with system-level access, bypassing Android Scoped Storage restrictions
+- **Full access**: Can access protected directories like `/Android/data/*` and `/Android/obb/*` that apps cannot normally access
+- **Direct file operations**: Pull files from device to your Mac, push files to device, or run shell commands
+- **Finder integration**: Scripts automatically open pulled directories in Finder after transfer
+
+**Best for:** Backing up app data, accessing protected folders, bulk file transfers, automated scripts
+
+### SSHFS (SSH Filesystem)
+
+**Connection:** WiFi network (device and Mac must be on same network)
+
+**Access Method:** Mounts Android storage as a network drive in macOS Finder
+
+**Key Features:**
+
+- **Finder integration**: Appears as a mounted volume, accessible like any external drive
+- **GUI-friendly**: Browse files visually, drag-and-drop, use standard macOS file operations
+- **Live access**: Files are accessed directly over the network (no need to copy first)
+- **Limited permissions**: Runs with Termux user permissions, subject to Android Scoped Storage restrictions
+
+**Best for:** Browsing files visually, quick file access, working with photos/documents in standard folders
+
+### When to Use Which?
+
+| Task                        | Recommended Method                                   |
+| --------------------------- | ---------------------------------------------------- |
+| Backing up Minecraft worlds | **ADB** (accesses protected `/Android/data` folders) |
+| Browsing photos in Finder   | **SSHFS** (convenient GUI access)                    |
+| Accessing app data folders  | **ADB** (only method that can access these)          |
+| Quick file transfer         | Either (ADB for bulk, SSHFS for browsing)            |
+| Automated backups           | **ADB** (better for scripting)                       |
+
+**Note:** Both methods require USB Debugging to be enabled. ADB uses the USB connection directly, while SSHFS uses ADB to discover the device's IP address, then connects over WiFi.
+
 ## Requirements
 
 ### macOS Dependencies
