@@ -22,7 +22,7 @@ set -euo pipefail
 # Can access Android/data directories
 
 # Useful paths on Android devices:
-# /storage/emulated/0 (aliased to /sdcard/ need trailing slash)
+# /storage/emulated/0 (aliased to /sdcard - trailing slash ensures symlink dereferencing)
 # /sdcard/DCIM (photos)
 # /sdcard/Download
 # /sdcard/Movies
@@ -48,7 +48,7 @@ Commands:
   push <local> <remote>    Push files/directory from local to device
   move <remote> <local>    Move all files (excluding hidden) from Android to local
   shell                    Open interactive adb shell
-  explorer                 Open common Android paths in Finder after pulling
+  explorer [directory]     Open common Android paths in Finder after pulling (default: ~/Downloads/files-downloaded-by-android-adb-helper-script)
   
 Examples:
   ./android-adb-helper.sh list /sdcard/DCIM
@@ -56,6 +56,7 @@ Examples:
   ./android-adb-helper.sh push ~/Downloads/file.txt /sdcard/Download/
   ./android-adb-helper.sh move /sdcard/Download ~/Downloads/moved
   ./android-adb-helper.sh explorer
+  ./android-adb-helper.sh explorer ~/Downloads/my-explorer
 
 ADB runs with elevated permissions
 Bypasses Scoped Storage restrictions
@@ -111,7 +112,14 @@ cmd_list() {
     return 1
   fi
   
-  echo "Listing: $path"
+  # Normalize directory path: ensure trailing slash for directories
+  # This is important for symlinks like /sdcard -> /storage/emulated/0
+  # Without trailing slash, ls may show the symlink itself instead of contents
+  if [[ "$path" != */ ]]; then
+    path="${path}/"
+  fi
+  
+  echo "Listing: ${path%/}"
   echo
   
   # Get the listing
@@ -314,6 +322,8 @@ cmd_move() {
 }
 
 cmd_explorer() {
+  local temp_dir="${1:-${HOME}/Downloads/files-downloaded-by-android-adb-helper-script}"
+  
   echo "================================================================================"
   echo "Android File Explorer"
   echo "================================================================================"
@@ -326,7 +336,7 @@ cmd_explorer() {
   echo "  - Pictures"
   echo "  - Documents"
   echo
-  echo "Files will be temporarily downloaded to: ${HOME}/AndroidExplorer"
+  echo "Files will be temporarily downloaded to: $temp_dir"
   echo "The folder will be opened in Finder when complete."
   echo
   echo "Note: This operation may take a while depending on the amount of data."
@@ -334,7 +344,6 @@ cmd_explorer() {
   echo "Press ENTER to continue, CTRL-C to cancel"
   read -r
   
-  local temp_dir="${HOME}/AndroidExplorer"
   mkdir -p "$temp_dir"
   
   echo
@@ -400,7 +409,7 @@ case "$1" in
     cmd_shell
     ;;
   explorer)
-    cmd_explorer
+    cmd_explorer "${2:-}"
     ;;
   -h|--help)
     usage
