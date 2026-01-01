@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # minecraft-backup-via-adb.sh
 #
+# Author: Rich Lewis - GitHub @RichLewis007
+#
 # TUI (Text User Interface) for Minecraft Bedrock Android backup script
 # Uses bash-ui.sh for menu functionality
 #
