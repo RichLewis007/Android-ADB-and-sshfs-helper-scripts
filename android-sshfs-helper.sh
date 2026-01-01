@@ -10,10 +10,18 @@ set -euo pipefail
 # I use Termux on my Android device for SSH server.
 #
 # Usage:
-#   ./android-sshfs-helper.sh get-ip        # Get Android IP address
-#   ./android-sshfs-helper.sh mount         # Mount Android device in Finder
-#   ./android-sshfs-helper.sh unmount       # Unmount Android device
-#   ./android-sshfs-helper.sh setup         # Show setup instructions
+#   ./android-sshfs-helper.sh get-ip                    # Get Android IP address
+#   ./android-sshfs-helper.sh mount [OPTIONS]          # Mount Android device in Finder
+#   ./android-sshfs-helper.sh unmount [OPTIONS]        # Unmount Android device
+#   ./android-sshfs-helper.sh setup                    # Show setup instructions
+#
+# Options for mount command:
+#   -u, --ssh-user USER     SSH username (e.g., u0_a123 for Termux)
+#   -i, --android-ip IP     Android device IP address (auto-detected if not provided)
+#   -p, --ssh-port PORT     SSH port (default: 8022)
+#   -m, --mount-point PATH  Local mount point (default: ~/AndroidDevice)
+#   -s, --use-sudo          Use sudo for mounting (requires password)
+#   -h, --help              Show help message
 # 
 # Accessing Android files with ADB vs. sshfs Notes:
 # ------------------------------------------------------------------------------
@@ -49,13 +57,16 @@ set -euo pipefail
 # Use ADB for Android/data files and SSHFS for general storage.
 
 ADB_BIN="adb"
-MOUNT_POINT="${MOUNT_POINT:-${HOME}/AndroidDevice}"  # Can be set via MOUNT_POINT env var
-SSH_USER="${SSH_USER:-}"  # Can be set via SSH_USER env var
+MOUNT_POINT="${HOME}/AndroidDevice"
+SSH_USER=""
+ANDROID_IP=""
+SSH_PORT="8022"
+USE_SUDO="false"
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 Usage:
-  android-sshfs-helper.sh <command>
+  android-sshfs-helper.sh <command> [OPTIONS]
 
 Commands:
   get-ip           Get Android device IP address via ADB
@@ -63,16 +74,25 @@ Commands:
   unmount          Unmount Android device
   setup            Show setup instructions for SSH server on Android
 
-Environment variables:
-  SSH_USER         SSH username (default: will prompt or detect)
-  ANDROID_IP       Android device IP address (default: will detect)
-  MOUNT_POINT      Local mount point (default: ~/AndroidDevice)
-  USE_SUDO         Set to "true" to use sudo for mounting (default: false)
+Options for mount command:
+  -u, --ssh-user USER     SSH username (e.g., u0_a123 for Termux) [will prompt if not provided]
+  -i, --android-ip IP     Android device IP address [auto-detected if not provided]
+  -p, --ssh-port PORT     SSH port (default: 8022)
+  -m, --mount-point PATH  Local mount point (default: ~/AndroidDevice)
+  -s, --use-sudo          Use sudo for mounting (requires password)
+  -h, --help              Show this help message
+
+Options for unmount command:
+  -m, --mount-point PATH  Local mount point (default: ~/AndroidDevice)
+  -h, --help              Show this help message
 
 Examples:
   ./android-sshfs-helper.sh get-ip
-  SSH_USER=u0_a123 ./android-sshfs-helper.sh mount
+  ./android-sshfs-helper.sh mount --ssh-user u0_a123
+  ./android-sshfs-helper.sh mount -u u0_a123 -i 192.168.1.100 -p 8022
+  ./android-sshfs-helper.sh mount -u u0_a123 --use-sudo
   ./android-sshfs-helper.sh unmount
+  ./android-sshfs-helper.sh unmount --mount-point /custom/path
 EOF
 }
 
@@ -132,7 +152,7 @@ get_android_ip() {
     echo >&2
     echo "Please get the IP address manually:" >&2
     echo "  1. On Android: Settings > Wi-Fi > (tap connected network) > IP address" >&2
-    echo "  2. Or set it manually: export ANDROID_IP=192.168.1.xxx" >&2
+    echo "  2. Or provide it with: --android-ip 192.168.1.xxx" >&2
     echo >&2
     echo "Debug: Tried multiple methods but couldn't find a valid IP." >&2
     return 1
@@ -193,10 +213,12 @@ Or manually:
 
 STEP 4: Mount the Device
 
-  export SSH_USER=your_username
-  ./android-sshfs-helper.sh mount
+  ./android-sshfs-helper.sh mount --ssh-user your_username
 
 Or with explicit IP and port:
+  ./android-sshfs-helper.sh mount -u your_username -i 192.168.1.xxx -p 8022
+
+Or using sshfs directly:
   sshfs -p 8022 your_username@192.168.1.xxx:/sdcard ~/AndroidDevice
 
 Common paths to mount:
@@ -214,7 +236,7 @@ cmd_mount() {
   check_device
   
   # Get IP address
-  if [[ -z "${ANDROID_IP:-}" ]]; then
+  if [[ -z "$ANDROID_IP" ]]; then
     ANDROID_IP=$(get_android_ip)
     if [[ -z "$ANDROID_IP" ]]; then
       exit 1
@@ -233,9 +255,6 @@ cmd_mount() {
       exit 1
     fi
   fi
-  
-  # Get port (default to 8022 for Termux, 2222 for SSHelper)
-  SSH_PORT="${SSH_PORT:-8022}"
   
   # Check if already mounted FIRST (before trying to create directory)
   # Use mount command for better detection (mountpoint doesn't always work for FUSE)
@@ -285,10 +304,10 @@ cmd_mount() {
   for remote_path in "${android_paths[@]}"; do
     echo "Trying remote path: $remote_path"
     
-    # Run sshfs (with or without sudo based on USE_SUDO env var)
+    # Run sshfs (with or without sudo based on USE_SUDO flag)
     # Note: If using sudo, it will prompt for password - that's expected
     sshfs_exit=1
-    if [[ "${USE_SUDO:-}" == "true" ]]; then
+    if [[ "$USE_SUDO" == "true" ]]; then
       echo "  (Using sudo - you'll be prompted for your Mac password)"
       # Run sudo directly (not in subshell) so password prompt is visible
       if sudo sshfs -p "$SSH_PORT" -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,allow_other,defer_permissions \
@@ -343,10 +362,10 @@ cmd_mount() {
       fi
     else
       # sshfs failed - check for permission errors
-      if [[ "${USE_SUDO:-}" != "true" ]] && echo "${sshfs_output:-}" | grep -q "Operation not permitted"; then
+      if [[ "$USE_SUDO" != "true" ]] && echo "${sshfs_output:-}" | grep -q "Operation not permitted"; then
         echo "  ❌ Permission error: macFUSE needs Full Disk Access"
         echo "     Try adding Terminal.app to: System Settings > Privacy & Security > Full Disk Access"
-        echo "     Or set USE_SUDO=true to use sudo instead"
+        echo "     Or use --use-sudo flag to use sudo instead"
       fi
       # Unmount if partial mount occurred
       umount "$MOUNT_POINT" 2>/dev/null || diskutil unmount "$MOUNT_POINT" 2>/dev/null || true
@@ -430,13 +449,78 @@ cmd_unmount() {
   fi
 }
 
+# Parse flags (called after command is extracted)
+parse_flags() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -u|--ssh-user)
+        if [[ -z "${2:-}" ]]; then
+          echo "ERROR: --ssh-user requires a value" >&2
+          exit 1
+        fi
+        SSH_USER="$2"
+        shift 2
+        ;;
+      -i|--android-ip)
+        if [[ -z "${2:-}" ]]; then
+          echo "ERROR: --android-ip requires a value" >&2
+          exit 1
+        fi
+        ANDROID_IP="$2"
+        shift 2
+        ;;
+      -p|--ssh-port)
+        if [[ -z "${2:-}" ]]; then
+          echo "ERROR: --ssh-port requires a value" >&2
+          exit 1
+        fi
+        SSH_PORT="$2"
+        shift 2
+        ;;
+      -m|--mount-point)
+        if [[ -z "${2:-}" ]]; then
+          echo "ERROR: --mount-point requires a value" >&2
+          exit 1
+        fi
+        MOUNT_POINT="$2"
+        shift 2
+        ;;
+      -s|--use-sudo)
+        USE_SUDO="true"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "ERROR: Unknown option: $1" >&2
+        usage
+        exit 1
+        ;;
+    esac
+  done
+}
+
 # Main
 if [[ $# -eq 0 ]]; then
   usage
   exit 1
 fi
 
-case "$1" in
+COMMAND="$1"
+shift
+
+# Handle help flag before command
+if [[ "$COMMAND" == "-h" ]] || [[ "$COMMAND" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+# Parse flags for the command
+parse_flags "$@"
+
+case "$COMMAND" in
   get-ip)
     cmd_get_ip
     ;;
@@ -449,12 +533,8 @@ case "$1" in
   setup)
     cmd_setup
     ;;
-  -h|--help)
-    usage
-    exit 0
-    ;;
   *)
-    echo "ERROR: Unknown command: $1" >&2
+    echo "ERROR: Unknown command: $COMMAND" >&2
     usage
     exit 1
     ;;

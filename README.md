@@ -208,23 +208,31 @@ Mount your Android device's storage in macOS Finder using SSHFS. Useful for brow
 ./android-sshfs-helper.sh get-ip
 
 # Mount Android device in Finder
-./android-sshfs-helper.sh mount
+./android-sshfs-helper.sh mount [OPTIONS]
 
 # Unmount Android device
-./android-sshfs-helper.sh unmount
+./android-sshfs-helper.sh unmount [OPTIONS]
 
 # Show setup instructions for SSH server on Android
 ./android-sshfs-helper.sh setup
 ```
 
-**Environment Variables:**
+**Options for mount command:**
 
 ```bash
-export SSH_USER=u0_a123          # Your Termux username
-export ANDROID_IP=192.168.1.100  # Android device IP (auto-detected if not set)
-export MOUNT_POINT=~/AndroidDevice  # Local mount point (default: ~/AndroidDevice)
-export SSH_PORT=8022             # SSH port (default: 8022 for Termux)
-export USE_SUDO=true             # Use sudo for mounting (if needed)
+-u, --ssh-user USER     SSH username (e.g., u0_a123 for Termux) [will prompt if not provided]
+-i, --android-ip IP     Android device IP address [auto-detected if not provided]
+-p, --ssh-port PORT     SSH port (default: 8022)
+-m, --mount-point PATH  Local mount point (default: ~/AndroidDevice)
+-s, --use-sudo          Use sudo for mounting (requires password)
+-h, --help              Show help message
+```
+
+**Options for unmount command:**
+
+```bash
+-m, --mount-point PATH  Local mount point (default: ~/AndroidDevice)
+-h, --help              Show help message
 ```
 
 **Quick Start:**
@@ -233,15 +241,15 @@ export USE_SUDO=true             # Use sudo for mounting (if needed)
 # 1. Get IP address
 ./android-sshfs-helper.sh get-ip
 
-# 2. Set username (get from Termux: run 'whoami')
-export SSH_USER=u0_a123
+# 2. Mount device (will prompt for username if not provided, auto-detects IP)
+./android-sshfs-helper.sh mount --ssh-user u0_a123
 
-# 3. Mount device
-./android-sshfs-helper.sh mount
+# Or with all options:
+./android-sshfs-helper.sh mount -u u0_a123 -i 192.168.1.100 -p 8022
 
-# 4. Browse in Finder at ~/AndroidDevice
+# 3. Browse in Finder at ~/AndroidDevice
 
-# 5. Unmount when done
+# 4. Unmount when done
 ./android-sshfs-helper.sh unmount
 ```
 
@@ -299,9 +307,19 @@ Check which directories are accessible on your Android device via ADB or SSHFS. 
 ./android-check-adb-or-sshfs-access.sh adb
 
 # Check access via SSHFS (Termux user permissions)
-export SSH_USER=u0_a123
-export ANDROID_IP=192.168.1.100
-./android-check-adb-or-sshfs-access.sh sshfs
+./android-check-adb-or-sshfs-access.sh sshfs --ssh-user u0_a123 --android-ip 192.168.1.100
+
+# Or with short flags:
+./android-check-adb-or-sshfs-access.sh sshfs -u u0_a123 -i 192.168.1.100 -p 8022
+```
+
+**Options for sshfs mode:**
+
+```bash
+-u, --ssh-user USER     SSH username (Termux user, e.g., u0_a499) [required]
+-i, --android-ip IP     Android device IP address [required]
+-p, --ssh-port PORT     SSH port (default: 8022)
+-h, --help              Show help message
 ```
 
 **What it checks:**
@@ -370,7 +388,7 @@ Path                      | Exists | Accessible | Sample Files
 **Option 2: Using SSHFS (for browsing)**
 
 ```bash
-./android-sshfs-helper.sh mount
+./android-sshfs-helper.sh mount --ssh-user u0_a123
 # Browse ~/AndroidDevice/DCIM in Finder
 # Copy files manually
 ./android-sshfs-helper.sh unmount
@@ -449,7 +467,7 @@ Android restricts app access to:
 
 **"Mount failed for all paths"**
 
-- Try using sudo: `export USE_SUDO=true`
+- Try using sudo: `./android-sshfs-helper.sh mount --ssh-user u0_a123 --use-sudo`
 - Verify SSH credentials: `ssh -p 8022 user@ip`
 - Check Android storage paths with `android-adb-find-paths.sh`
 
