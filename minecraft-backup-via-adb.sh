@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# minecraft-backup-tui.sh
+# minecraft-backup-via-adb.sh
 #
 # TUI (Text User Interface) for Minecraft Bedrock Android backup script
 # Uses bash-ui.sh for menu functionality
@@ -30,7 +30,7 @@
 #   - zip command (for .mcworld export)
 #
 # Usage:
-#   ./minecraft-backup-tui.sh
+#   ./minecraft-backup-via-adb.sh
 #
 # Configuration:
 #   - MINECRAFT_WORLDS_PATH: Primary path to Minecraft worlds on Android
@@ -56,7 +56,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKUP_SCRIPT="${SCRIPT_DIR}/minecraft-backup.sh"
+BACKUP_SCRIPT="${SCRIPT_DIR}/minecraft-backup-via-adb.sh"
 UI_LIB="${HOME}/utils/bash-ui.sh"
 
 # Source the UI library
