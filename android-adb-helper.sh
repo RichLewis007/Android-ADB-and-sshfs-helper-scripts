@@ -116,8 +116,9 @@ cmd_list() {
   
   # Get the listing
   local listing
+
   listing=$("$ADB_BIN" shell "ls -la '$path' 2>/dev/null" | tr -d '\r')
-  
+
   if [[ -z "$listing" ]]; then
     echo "ERROR: Cannot list directory: $path" >&2
     return 1
@@ -126,12 +127,19 @@ cmd_list() {
   # Count items: all lines except "total" line and lines ending with " ." or " .."
   # The last field in ls -la output is the filename
   local item_count
-  item_count=$(echo "$listing" | grep -v "^total" | awk 'NF > 0 && $NF != "." && $NF != ".." {count++} END {print count+0}')
-  
+  item_count=$(echo "$listing" | { grep -v "^total" || true; } | awk 'NF > 0 && $NF != "." && $NF != ".." {count++} END {print count+0}')
+
   # Display the listing (excluding the "total" line)
-  echo "$listing" | grep -v "^total"
-  echo
-  echo "Total items: $item_count"
+  local filtered_listing
+  filtered_listing=$(echo "$listing" | { grep -v "^total" || true; })
+
+  if [[ $item_count -eq 0 ]]; then
+    echo "No files or directories found in: $path"
+  else
+    echo "$filtered_listing"
+    echo
+    echo "Total items: $item_count"
+  fi
 }
 
 cmd_pull() {
@@ -229,15 +237,49 @@ cmd_move() {
   echo "Starting copy operation..."
   echo
   
-  # Copy files using adb pull (this will preserve directory structure)
-  if ! "$ADB_BIN" pull "$remote" "$local_path"; then
-    echo "ERROR: Failed to copy files from Android device" >&2
+  # Copy files one by one to show progress
+  local copied=0
+  local failed=0
+  
+  while IFS= read -r file_path; do
+    [[ -z "$file_path" ]] && continue
+    
+    # Calculate relative path for display
+    local rel_path
+    if [[ "$file_path" == "$remote" ]]; then
+      rel_path=$(basename "$file_path")
+    else
+      rel_path="${file_path#$remote/}"
+    fi
+    
+    echo "Copying: $rel_path"
+    # Calculate destination path preserving directory structure
+    local dest_file="$local_path/$rel_path"
+    local dest_dir
+    dest_dir=$(dirname "$dest_file")
+    mkdir -p "$dest_dir" 2>/dev/null || true
+    
+    if "$ADB_BIN" pull "$file_path" "$dest_dir" >/dev/null 2>&1; then
+      ((copied++))
+    else
+      echo "  ✗ Failed to copy: $rel_path"
+      ((failed++))
+    fi
+  done <<< "$files_list"
+  
+  if [[ $failed -gt 0 ]]; then
+    echo "WARNING: $failed file(s) failed to copy" >&2
+  fi
+  
+  if [[ $copied -eq 0 ]]; then
+    echo "ERROR: No files were copied" >&2
     exit 1
   fi
   
   echo
+  echo
   echo "================================================================================"
-  echo "Copy complete: $file_count files copied"
+  echo "Copy complete: $copied file(s) copied"
   echo "================================================================================"
   echo
   echo "Files have been copied to: $local_path"
@@ -251,14 +293,11 @@ cmd_move() {
   echo "Deleting files from Android device: $remote"
   echo
   
-  # Delete files from Android device
-  # Use find to delete files (excluding hidden files)
+  # Delete files from Android device (excluding hidden files)
+  # Only delete files, not directories - preserve folder structure
   if ! "$ADB_BIN" shell "find '$remote' -type f ! -name '.*' ! -path '*/.*' -delete 2>/dev/null"; then
     echo "WARNING: Some files may not have been deleted. Check manually." >&2
   fi
-  
-  # Also try to remove empty directories (optional, but clean)
-  "$ADB_BIN" shell "find '$remote' -type d -empty -delete 2>/dev/null" || true
   
   echo "Done. $file_count files moved from $remote to $local_path"
   
