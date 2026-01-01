@@ -5,7 +5,13 @@
 #
 # Check what directories are accessible on Android device via ADB or SSHFS
 #
-# Usage: ./android-check-adb-or-sshfs-access.sh [adb|sshfs]
+# Usage: ./android-check-adb-or-sshfs-access.sh [adb|sshfs] [OPTIONS]
+#
+# Options for sshfs mode:
+#   -u, --ssh-user USER     SSH username (Termux user, e.g., u0_a499)
+#   -i, --android-ip IP     Android device IP address
+#   -p, --ssh-port PORT     SSH port (default: 8022)
+#   -h, --help              Show this help message
 #
 # SSH Authentication:
 #   The script first attempts SSH key authentication (passwordless). If that fails,
@@ -21,9 +27,10 @@
 set -euo pipefail
 
 ADB_BIN="adb"
-SSH_USER="${SSH_USER:-}"
-ANDROID_IP="${ANDROID_IP:-}"
-SSH_PORT="${SSH_PORT:-8022}"
+SSH_USER=""
+ANDROID_IP=""
+SSH_PORT="8022"
+MODE=""
 
 check_device() {
   device_count="$("$ADB_BIN" devices | awk 'NR>1 && $2=="device"{count++} END{print count+0}')"
@@ -63,8 +70,8 @@ check_via_adb() {
 
 check_via_ssh() {
   if [[ -z "$SSH_USER" ]] || [[ -z "$ANDROID_IP" ]]; then
-    echo "ERROR: SSH_USER and ANDROID_IP must be set for SSHFS check" >&2
-    echo "Example: export SSH_USER=u0_a499 ANDROID_IP=192.168.86.100" >&2
+    echo "ERROR: --ssh-user and --android-ip must be provided for SSHFS check" >&2
+    echo "Example: $0 sshfs --ssh-user u0_a499 --android-ip 192.168.86.100" >&2
     exit 1
   fi
   
@@ -118,41 +125,98 @@ check_via_ssh() {
 
 usage() {
   cat <<EOF
-Usage: android-check-adb-or-sshfs-access.sh [adb|sshfs]
+Usage: android-check-adb-or-sshfs-access.sh [adb|sshfs] [OPTIONS]
 
 Checks what directories are accessible on the Android device.
 
-Options:
+Modes:
   adb     - Check access via ADB (has elevated permissions)
   sshfs   - Check access via SSHFS (restricted by Android Scoped Storage)
 
-For sshfs mode, set:
-  export SSH_USER=the_termux_username
-  export ANDROID_IP=192.168.86.100
-  export SSH_PORT=8022
+Options for sshfs mode:
+  -u, --ssh-user USER     SSH username (Termux user, e.g., u0_a499) [required]
+  -i, --android-ip IP     Android device IP address [required]
+  -p, --ssh-port PORT     SSH port (default: 8022)
+  -h, --help              Show this help message
+
+Examples:
+  $0 adb
+  $0 sshfs --ssh-user u0_a499 --android-ip 192.168.86.100
+  $0 sshfs -u u0_a499 -i 192.168.86.100 -p 8022
 
 EOF
 }
 
+# Parse command line arguments
+parse_args() {
+  # First argument should be the mode
+  if [[ $# -eq 0 ]]; then
+    usage
+    exit 1
+  fi
+  
+  MODE="$1"
+  shift
+  
+  # Validate mode
+  if [[ "$MODE" != "adb" ]] && [[ "$MODE" != "sshfs" ]]; then
+    echo "ERROR: Unknown mode: $MODE" >&2
+    echo "Must be either 'adb' or 'sshfs'" >&2
+    usage
+    exit 1
+  fi
+  
+  # Parse flags
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -u|--ssh-user)
+        if [[ -z "${2:-}" ]]; then
+          echo "ERROR: --ssh-user requires a value" >&2
+          exit 1
+        fi
+        SSH_USER="$2"
+        shift 2
+        ;;
+      -i|--android-ip)
+        if [[ -z "${2:-}" ]]; then
+          echo "ERROR: --android-ip requires a value" >&2
+          exit 1
+        fi
+        ANDROID_IP="$2"
+        shift 2
+        ;;
+      -p|--ssh-port)
+        if [[ -z "${2:-}" ]]; then
+          echo "ERROR: --ssh-port requires a value" >&2
+          exit 1
+        fi
+        SSH_PORT="$2"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "ERROR: Unknown option: $1" >&2
+        usage
+        exit 1
+        ;;
+    esac
+  done
+}
+
 # Main
-if [[ $# -eq 0 ]]; then
-  usage
-  exit 1
-fi
+parse_args "$@"
 
 check_device
 
-case "$1" in
+case "$MODE" in
   adb)
     check_via_adb
     ;;
   sshfs)
     check_via_ssh
-    ;;
-  *)
-    echo "ERROR: Unknown option: $1" >&2
-    usage
-    exit 1
     ;;
 esac
 
