@@ -108,6 +108,7 @@ confirm() {
 }
 
 # Pick option - interactive menu selection with fzf/gum/basic fallback
+# Based on original implementation from ~/utils/bash-ui.sh
 pick_option() {
   local prompt="$1"
   shift
@@ -117,15 +118,42 @@ pick_option() {
     return 1
   fi
   
-  # Try fzf first (best experience)
+  # Split into header and prompt_line on first newline (if present)
+  local header prompt_line
+  header="${prompt%%$'\n'*}"
+  if [[ "$prompt" == *$'\n'* ]]; then
+    prompt_line="${prompt#*$'\n'}"
+  else
+    prompt_line="$prompt"
+  fi
+  
+  # Try fzf first (best experience) - matches original implementation
   if command -v fzf >/dev/null 2>&1; then
-    printf '%s\n' "${items[@]}" | fzf --prompt="$prompt " --header=""
+    local fzf_header="$header"
+    local fzf_prompt="$prompt_line"
+    if [[ -z "$fzf_prompt" ]]; then
+      fzf_prompt="$fzf_header"
+    fi
+    
+    printf '%s\n' "${items[@]}" | fzf \
+      --header="$fzf_header" \
+      --prompt="${fzf_prompt} " \
+      --height=100% \
+      --border \
+      --reverse \
+      --info=hidden
     return $?
   fi
   
   # Try gum second (modern alternative)
   if command -v gum >/dev/null 2>&1; then
-    printf '%s\n' "${items[@]}" | gum choose --prompt="$prompt"
+    local combined_header
+    if [[ -n "$prompt_line" && "$prompt_line" != "$header" ]]; then
+      combined_header="${header}\n${prompt_line}"
+    else
+      combined_header="$header"
+    fi
+    gum choose --header "$combined_header" -- "${items[@]}"
     return $?
   fi
   
@@ -361,7 +389,7 @@ get_world_list() {
   return 0
 }
 
-# Load world list from cache file (only if cache is less than 1 hour old)
+# Load world list from cache file (only if cache is less than 5 minutes old)
 load_world_list_from_cache() {
   WORLD_LIST=()
   WORLD_NAMES=()
@@ -370,7 +398,7 @@ load_world_list_from_cache() {
     return 1
   fi
   
-  # Check if cache file is older than 1 hour (3600 seconds)
+  # Check if cache file is older than 5 minutes (300 seconds)
   local cache_age=0
   local current_time
   current_time=$(date +%s) || current_time=0
@@ -386,14 +414,20 @@ load_world_list_from_cache() {
     cache_mtime="0"
   fi
   
-  if [[ "$cache_mtime" != "0" ]] && [[ "$current_time" != "0" ]]; then
-    cache_age=$((current_time - cache_mtime))
-    
-    # If cache is older than 1 hour, delete it and return failure
-    if [[ $cache_age -gt 3600 ]]; then
-      rm -f "$WORLD_LIST_CACHE_FILE"
-      return 1
-    fi
+  # If we can't determine the cache age, don't trust it - delete and return failure
+  if [[ "$cache_mtime" == "0" ]] || [[ "$current_time" == "0" ]]; then
+    log_warn "Cannot determine cache file age, deleting cache for safety"
+    rm -f "$WORLD_LIST_CACHE_FILE"
+    return 1
+  fi
+  
+  cache_age=$((current_time - cache_mtime))
+  
+  # If cache is older than 5 minutes, delete it and return failure
+  if [[ $cache_age -gt 300 ]]; then
+    log_info "Cache is ${cache_age} seconds old (expired), deleting"
+    rm -f "$WORLD_LIST_CACHE_FILE"
+    return 1
   fi
   
   {
@@ -409,9 +443,12 @@ load_world_list_from_cache() {
   } < "$WORLD_LIST_CACHE_FILE"
   
   if [[ ${#WORLD_LIST[@]} -eq 0 ]]; then
+    log_warn "Cache file is empty or corrupted, deleting"
+    rm -f "$WORLD_LIST_CACHE_FILE"
     return 1
   fi
   
+  log_info "Loaded ${#WORLD_LIST[@]} world(s) from cache (age: ${cache_age}s)"
   return 0
 }
 
@@ -531,7 +568,10 @@ backup_world_as_mcworld() {
 
 handler_list_worlds() {
   if ! check_device; then
-    return 1
+    echo
+    printf "Press Enter to continue..."
+    read -r
+    return 0  # Return 0 to return to main menu
   fi
   
   # Try to load from cache first, otherwise fetch from device
@@ -540,7 +580,7 @@ handler_list_worlds() {
       echo
       printf "Press Enter to continue..."
       read -r
-      return 1
+      return 0  # Return 0 to return to main menu (not 1, which would be an error)
     fi
   fi
   
@@ -607,11 +647,17 @@ handler_list_worlds() {
 
 handler_backup_all() {
   if ! check_device; then
-    return 1
+    echo
+    printf "Press Enter to continue..."
+    read -r
+    return 0  # Return 0 to return to main menu
   fi
   
   if ! get_world_list; then
-    return 1
+    echo
+    printf "Press Enter to continue..."
+    read -r
+    return 0  # Return 0 to return to main menu
   fi
   
   log_info "Backing up all worlds..."
@@ -658,6 +704,70 @@ handler_open_backup_folder() {
   read -r
 }
 
+handler_clear_cache() {
+  if [[ ! -f "$WORLD_LIST_CACHE_FILE" ]]; then
+    log_info "Cache file does not exist: $WORLD_LIST_CACHE_FILE"
+    echo
+    printf "Press Enter to continue..."
+    read -r
+    return 0
+  fi
+  
+  # Get cache file modification time and age
+  local cache_mtime="0"
+  local current_time
+  current_time=$(date +%s) || current_time=0
+  
+  # Get modification time (try macOS stat first, then Linux stat)
+  if command -v stat >/dev/null 2>&1; then
+    cache_mtime=$(stat -f %m "$WORLD_LIST_CACHE_FILE" 2>/dev/null || stat -c %Y "$WORLD_LIST_CACHE_FILE" 2>/dev/null || echo "0")
+  fi
+  
+  # Ensure cache_mtime is a number
+  if [[ ! "$cache_mtime" =~ ^[0-9]+$ ]]; then
+    cache_mtime="0"
+  fi
+  
+  # Display cache file info
+  if [[ "$cache_mtime" != "0" ]] && [[ "$current_time" != "0" ]]; then
+    local cache_age=$((current_time - cache_mtime))
+    local cache_date
+    cache_date=$(date -r "$cache_mtime" 2>/dev/null || date -d "@$cache_mtime" 2>/dev/null || echo "unknown")
+    
+    log_info "Cache file: $WORLD_LIST_CACHE_FILE"
+    log_info "Last modified: $cache_date"
+    
+    # Calculate age in human-readable format
+    if [[ $cache_age -lt 60 ]]; then
+      log_info "Age: ${cache_age} second(s)"
+    elif [[ $cache_age -lt 3600 ]]; then
+      local minutes=$((cache_age / 60))
+      log_info "Age: ${minutes} minute(s)"
+    elif [[ $cache_age -lt 86400 ]]; then
+      local hours=$((cache_age / 3600))
+      log_info "Age: ${hours} hour(s)"
+    else
+      local days=$((cache_age / 86400))
+      log_info "Age: ${days} day(s)"
+    fi
+    
+    # Check if cache is expired (older than 5 minutes)
+    if [[ $cache_age -gt 300 ]]; then
+      log_warn "Cache is expired (older than 5 minutes)"
+    fi
+  else
+    log_info "Cache file: $WORLD_LIST_CACHE_FILE"
+    log_warn "Could not determine cache file age"
+  fi
+  
+  # Delete the cache file
+  rm -f "$WORLD_LIST_CACHE_FILE"
+  log_ok "Cleared world list cache"
+  echo
+  printf "Press Enter to continue..."
+  read -r
+}
+
 # ============================================================
 # Main Menu
 # ============================================================
@@ -667,6 +777,7 @@ main_menu() {
     "List Minecraft Worlds - Show all worlds and backup individually::handler_list_worlds" \
     "Backup All Worlds - Backup all worlds at once::handler_backup_all" \
     "Open Backup Folder - Open the backup folder in Finder::handler_open_backup_folder" \
+    "Clear World List Cache - Delete cached world list::handler_clear_cache" \
     "Quit - Exit the program::QUIT"
 }
 
