@@ -6,8 +6,8 @@ set -euo pipefail
 # Author: Rich Lewis - GitHub @RichLewis007
 #
 # Helper script for easier file access to Android devices via ADB.
-# This script provides shortcuts for common file operations using adb pull/push,
-# similar to your minecraft-backup.sh script, but for general file access.
+# This script provides shortcuts for common file operations using adb pull/push
+# for general file access with elevated permissions.
 #
 # Usage:
 #   ./android-adb-helper.sh list                    # List device files

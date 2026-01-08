@@ -33,9 +33,8 @@ set -euo pipefail
 # - Direct Termux terminal
 # - SSHFS mount (same permissions)
 
-# For Android/data files (like Minecraft):
-# Use ADB — the minecraft-backup.sh and android-adb-helper.sh scripts 
-# already do this correctly:
+# For Android/data files:
+# Use ADB — the android-adb-helper.sh script can access these paths:
 # - ADB runs with elevated permissions
 # - Bypasses Scoped Storage restrictions
 # - Can access Android/data directories

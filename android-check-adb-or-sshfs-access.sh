@@ -50,9 +50,6 @@ check_via_adb() {
     "/storage/emulated/0/DCIM"
     "/storage/emulated/0/Download"
     "/storage/emulated/0/Android/data"
-    "/storage/emulated/0/Android/data/com.mojang.minecraftpe"
-    "/storage/emulated/0/Android/data/com.mojang.minecraftpe/files"
-    "/sdcard/Android/data/com.mojang.minecraftpe/files/games/com.mojang"
   )
   
   for path in "${paths[@]}"; do
@@ -84,7 +81,6 @@ check_via_ssh() {
     "/storage/emulated/0/DCIM"
     "/storage/emulated/0/Download"
     "/storage/emulated/0/Android/data"
-    "/storage/emulated/0/Android/data/com.mojang.minecraftpe"
     "/data/data/com.termux/files/home/storage/shared"
     "/data/data/com.termux/files/home/storage/shared/Android/data"
   )
@@ -226,6 +222,6 @@ echo "Android 11+ (Scoped Storage) restricts access to:"
 echo "  - /storage/emulated/0/Android/data/* (except via ADB or owning app)"
 echo "  - /storage/emulated/0/Android/obb/*"
 echo
-echo "For Minecraft backups, use ADB (the minecraft-backup-via-adb.sh script)"
+echo "For protected app data directories, use ADB (android-adb-helper.sh)"
 echo "For general file access, SSHFS works fine for most other directories"
 

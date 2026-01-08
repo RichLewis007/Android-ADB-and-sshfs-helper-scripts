@@ -2,7 +2,7 @@
 
 **Author:** Rich Lewis - [GitHub @RichLewis007](https://github.com/RichLewis007)
 
-A collection of bash scripts for managing files on Android devices via ADB (Android Debug Bridge) and SSHFS. These utilities help you access Android storage, back up Minecraft worlds, and manage SSHFS mounts on macOS.
+A collection of bash scripts for managing files on Android devices via ADB (Android Debug Bridge) and SSHFS. These utilities help you access Android storage and manage SSHFS mounts on macOS.
 
 ## Overview
 
@@ -10,7 +10,6 @@ These scripts provide convenient command-line tools for:
 
 - **ADB-based file access**: Pull/push files with elevated permissions (bypasses Android Scoped Storage restrictions)
 - **SSHFS mounting**: Mount Android device storage in macOS Finder via SSH
-- **Minecraft backups**: Interactive TUI for backing up Minecraft Bedrock worlds from Android devices
 - **Mount management**: Clean up stale SSHFS mount points
 
 ## Understanding ADB and SSHFS
@@ -49,13 +48,12 @@ ADB (Android Debug Bridge) and SSHFS are two complementary methods for accessing
 
 ### When to Use Which?
 
-| Task                        | Recommended Method                                   |
-| --------------------------- | ---------------------------------------------------- |
-| Backing up Minecraft worlds | **ADB** (accesses protected `/Android/data` folders) |
-| Browsing photos in Finder   | **SSHFS** (convenient GUI access)                    |
-| Accessing app data folders  | **ADB** (only method that can access these)          |
-| Quick file transfer         | Either (ADB for bulk, SSHFS for browsing)            |
-| Automated backups           | **ADB** (better for scripting)                       |
+| Task                       | Recommended Method                          |
+| -------------------------- | ------------------------------------------- |
+| Browsing photos in Finder  | **SSHFS** (convenient GUI access)           |
+| Accessing app data folders | **ADB** (only method that can access these) |
+| Quick file transfer        | Either (ADB for bulk, SSHFS for browsing)   |
+| Automated backups          | **ADB** (better for scripting)              |
 
 **Note:** Both methods require USB Debugging to be enabled. ADB uses the USB connection directly, while SSHFS uses ADB to discover the device's IP address, then connects over WiFi.
 
@@ -104,38 +102,6 @@ sudo port install gum
    - Set up SSH server (see `android-sshfs-helper.sh setup` for instructions)
 
 ## Scripts
-
-### `minecraft-backup-via-adb.sh`
-
-Interactive TUI for backing up Minecraft Bedrock worlds from Android devices.
-
-**Features:**
-
-- Lists all Minecraft worlds from your Android device
-- Displays world names (from `levelname.txt` files)
-- Backup individual worlds or all worlds at once
-- Two backup formats:
-  - **World folders**: Full directory structure (`<world-name>_<world-id>`)
-  - **.mcworld files**: Zipped archives ready for import
-
-**Usage:**
-
-```bash
-./minecraft-backup-via-adb.sh
-```
-
-**Backup Location:**
-
-- `~/Downloads/Minecraft-Worlds-Backups/world-folders/` - Full world directories
-- `~/Downloads/Minecraft-Worlds-Backups/mcworld-files/` - .mcworld archives
-
-**Notes:**
-
-- Close Minecraft app before backing up for best consistency
-- Automatically detects correct Android storage path
-- World names are sanitized for safe folder/file names
-
----
 
 ### `android-adb-helper.sh`
 
@@ -325,7 +291,7 @@ Check which directories are accessible on your Android device via ADB or SSHFS. 
 **What it checks:**
 
 - Common storage paths (`/storage/emulated/0`, `/sdcard`, etc.)
-- Android data directories (`/Android/data/com.mojang.minecraftpe`)
+- Android data directories
 - Termux shared storage paths
 - Reports existence and accessibility of each path
 
@@ -365,17 +331,6 @@ Path                      | Exists | Accessible | Sample Files
 ---
 
 ## Common Workflows
-
-### Backing Up Minecraft Worlds
-
-```bash
-# Run the interactive backup tool
-./minecraft-backup-via-adb.sh
-
-# Select "List Minecraft Worlds"
-# Choose a world and backup format
-# Worlds are saved to ~/Downloads/Minecraft-Worlds-Backups/
-```
 
 ### Transferring Photos from Android
 

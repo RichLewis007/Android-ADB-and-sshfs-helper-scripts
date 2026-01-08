@@ -94,8 +94,6 @@ count_tests() {
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
     # android-sshfs-mounts-cleanup.sh: 1 test
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
-    # minecraft-backup-via-adb.sh: 1 test (interactive)
-    TOTAL_TESTS=$((TOTAL_TESTS + 1))
 }
 
 # Main test execution
@@ -295,33 +293,6 @@ main() {
     wait_for_user
     
     # ============================================================================
-    # minecraft-backup-via-adb.sh Test
-    # ============================================================================
-    
-    print_test_header "minecraft-backup-via-adb.sh (Interactive TUI)"
-    echo "Running: ./minecraft-backup-via-adb.sh"
-    echo -e "${YELLOW}Note: This is an interactive TUI. You'll need to navigate the menu.${NC}"
-    echo
-    echo "This script will:"
-    echo "  1. Show an interactive menu (fzf/gum/basic select)"
-    echo "  2. List Minecraft worlds from your Android device"
-    echo "  3. Allow you to select worlds to backup"
-    echo "  4. Choose backup format (world folders or .mcworld files)"
-    echo
-    echo -e "${YELLOW}Press any key to launch the Minecraft backup script...${NC}"
-    read -n 1 -s
-    echo
-    ./minecraft-backup-via-adb.sh
-    print_expected "• Should launch an interactive menu/TUI
-• Should detect and list Minecraft worlds from Android device
-• Should show world names (from levelname.txt files)
-• Should allow selecting individual worlds or all worlds
-• Should allow choosing backup format (folders or .mcworld)
-• Should show progress indicators during backup
-• Should save backups to ~/Downloads/Minecraft-Worlds-Backups/"
-    wait_for_user
-    
-    # ============================================================================
     # Summary
     # ============================================================================
     
@@ -336,12 +307,10 @@ main() {
     echo "  • Tested both modes of android-check-adb-or-sshfs-access.sh"
     echo "  • Tested android-adb-find-paths.sh"
     echo "  • Tested android-sshfs-mounts-cleanup.sh"
-    echo "  • Tested minecraft-backup-via-adb.sh (interactive)"
     echo
     echo -e "${YELLOW}Note: Some tests require additional setup:${NC}"
     echo "  • SSHFS tests require SSH server running on Android"
     echo "  • Some pull/push tests may fail if directories don't exist (this is OK)"
-    echo "  • Minecraft backup requires Minecraft worlds on your device"
     echo
     echo "All scripts should now be verified!"
     echo
