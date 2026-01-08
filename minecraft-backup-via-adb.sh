@@ -8,8 +8,11 @@
 # Description:
 #   This script provides an interactive menu-driven interface for backing up
 #   Minecraft Bedrock worlds from an Android device via ADB (Android Debug Bridge).
-#   It allows users to selectively backup individual worlds or all worlds at once,
-#   in either "as-is" directory format or as .mcworld files (zipped format).
+#   It allows users to selectively backup individual worlds or all worlds at once.
+#
+#   Two backup formats are supported:
+#   1. World folders: Full directory structure with all world files
+#   2. .mcworld files: Zipped world archives ready for import into Minecraft
 #
 # Features:
 #   - Interactive menu system (supports fzf/gum/basic menu fallback)
@@ -69,6 +72,7 @@ MINECRAFT_WORLDS_ALT_PATH="/sdcard/Android/data/com.mojang.minecraftpe/files/gam
 # Global variables
 declare -a WORLD_LIST
 declare -a WORLD_NAMES
+declare -a WORLD_ACCESS_TIMES
 WORLD_LIST_CACHE_FILE="${TMPDIR:-/tmp}/minecraft-worlds-cache.txt"
 
 # ============================================================
@@ -92,13 +96,29 @@ log_ok() {
   echo "✓ $*" >&2
 }
 
-# Confirm function - prompts user for yes/no
+# Confirm function - prompts user for yes/no with optional default
+# Usage: confirm "Prompt" [default]
+# default can be "y" or "n" (defaults to "y" if not specified)
 confirm() {
   local prompt="$1"
+  local default="${2:-y}"  # Default to "y" if not specified
   local response
+  local prompt_suffix
+  
+  # Set prompt suffix based on default
+  if [[ "$default" == "y" ]] || [[ "$default" == "Y" ]]; then
+    prompt_suffix="[Y/n]"
+  else
+    prompt_suffix="[y/N]"
+  fi
+  
   while true; do
-    printf "%s (y/n): " "$prompt" >&2
+    printf "%s %s: " "$prompt" "$prompt_suffix" >&2
     read -r response
+    # If empty response, use default
+    if [[ -z "$response" ]]; then
+      response="$default"
+    fi
     case "$response" in
       [yY]|[yY][eE][sS]) return 0 ;;
       [nN]|[nN][oO]) return 1 ;;
@@ -299,6 +319,7 @@ check_device() {
 get_world_list() {
   WORLD_LIST=()
   WORLD_NAMES=()
+  WORLD_ACCESS_TIMES=()
 
   log_info "Fetching world list from Android device..."
   log_info "Trying path: ${MINECRAFT_WORLDS_PATH}"
@@ -363,12 +384,53 @@ get_world_list() {
       [[ -n "$name" ]] && world_name="$name"
     fi
     
+    # Get access time (atime) for the world directory
+    local world_path="${MINECRAFT_WORLDS_PATH}/${wid}"
+    local access_time="0"
+    # Try to get access time using stat via ADB
+    # stat format: %X for access time (atime) in seconds since epoch
+    local stat_output
+    stat_output=$("$ADB_BIN" shell "stat -c %X '${world_path}' 2>/dev/null || stat -f %a '${world_path}' 2>/dev/null || echo 0" 2>/dev/null | tr -d '\r\n' || echo "0")
+    if [[ "$stat_output" =~ ^[0-9]+$ ]]; then
+      access_time="$stat_output"
+    fi
+    
     WORLD_LIST+=("$wid")
     WORLD_NAMES+=("$world_name")
+    WORLD_ACCESS_TIMES+=("$access_time")
     ((count++))
   done
   
   log_info "Parsed $count world(s) from output"
+  
+  # Sort worlds by access time (most recently accessed first)
+  # Create array of indices, sort by access time, then reorder arrays
+  if [[ ${#WORLD_LIST[@]} -gt 1 ]]; then
+    local temp_array=()
+    local i
+    for i in "${!WORLD_ACCESS_TIMES[@]}"; do
+      temp_array+=("${WORLD_ACCESS_TIMES[$i]}:$i")
+    done
+    
+    # Sort by access time (descending) - most recent first
+    local sorted_pairs=()
+    mapfile -t sorted_pairs < <(printf '%s\n' "${temp_array[@]}" | sort -t: -k1 -rn)
+    
+    local sorted_world_list=()
+    local sorted_world_names=()
+    local sorted_access_times=()
+    
+    for pair in "${sorted_pairs[@]}"; do
+      local idx="${pair##*:}"
+      sorted_world_list+=("${WORLD_LIST[$idx]}")
+      sorted_world_names+=("${WORLD_NAMES[$idx]}")
+      sorted_access_times+=("${WORLD_ACCESS_TIMES[$idx]}")
+    done
+    
+    WORLD_LIST=("${sorted_world_list[@]}")
+    WORLD_NAMES=("${sorted_world_names[@]}")
+    WORLD_ACCESS_TIMES=("${sorted_access_times[@]}")
+  fi
 
   if [[ ${#WORLD_LIST[@]} -eq 0 ]]; then
     log_warn "No worlds found after parsing. Make sure Minecraft is installed and has worlds."
@@ -393,6 +455,7 @@ get_world_list() {
 load_world_list_from_cache() {
   WORLD_LIST=()
   WORLD_NAMES=()
+  WORLD_ACCESS_TIMES=()
   
   if [[ ! -f "$WORLD_LIST_CACHE_FILE" ]]; then
     return 1
@@ -497,7 +560,7 @@ backup_world_as_is() {
     log_info "Location: $dest_dir"
     
     if [[ "$(uname)" == "Darwin" ]]; then
-      if confirm "Open backup location in Finder?"; then
+      if confirm "Open backup location in Finder?" "y"; then
         open "$backup_dir"
       fi
     fi
